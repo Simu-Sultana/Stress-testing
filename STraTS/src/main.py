@@ -2,6 +2,7 @@ import argparse
 import os
 from utils import Logger, set_all_seeds
 import torch
+import pandas as pd
 from dataset_pretrain import PretrainDataset
 from dataset import Dataset
 from modeling_strats import Strats
@@ -24,9 +25,10 @@ def parse_args() -> argparse.Namespace:
 
     # dataset related arguments
     parser.add_argument('--dataset', type=str, default='physionet_2012')
+    parser.add_argument('--file', type=str, default='physionet_2012')
     parser.add_argument('--train_frac', type=float, default=0.5)
     parser.add_argument('--run', type=str, default='1o10')
-
+    parser.add_argument('--target', type=str, default='in_hospital_mortality')
     # model related arguments
     parser.add_argument('--model_type', type=str, default='strats',
                         choices=['gru','tcn','sand','grud','interpnet',
@@ -88,6 +90,63 @@ def set_output_dir(args: argparse.Namespace) -> None:
                 args.output_dir += '|'+param+':'+str(getattr(args, param))
     os.makedirs(args.output_dir, exist_ok=True)
 
+def save_results_csv(args, best_val_res, best_test_res):
+    """
+    Save best validation and test results to a CSV file (append mode).
+    One row = one experiment run.
+    """
+
+    # Create results directory if it does not exist
+    os.makedirs("results", exist_ok=True)
+
+    # Example args.file:
+    # physionet_2012_sparsified_10_2
+    file_tag = args.file
+    parts = file_tag.split("_")
+
+    # Robust parsing
+    perturbation = parts[2] if len(parts) > 2 else "none"
+    pct = int(parts[3]) if len(parts) > 3 else None
+    seed = int(parts[4]) if len(parts) > 4 else args.seed
+
+    # Base row information
+    row = {
+        "dataset": args.dataset,
+        "model": args.model_type,
+        "perturbation": perturbation,
+        "pct": pct,
+        "seed": seed,
+        "lr": args.lr,
+        "hid_dim": args.hid_dim,
+        "dropout": args.dropout,
+        "train_frac": args.train_frac,
+    }
+
+    # Add validation metrics
+    if best_val_res is not None:
+        for k, v in best_val_res.items():
+            row[f"val_{k}"] = v
+
+    # Add test metrics
+    if best_test_res is not None:
+        for k, v in best_test_res.items():
+            row[f"test_{k}"] = v
+
+    # Create DataFrame
+    df = pd.DataFrame([row])
+
+    # One CSV per dataset + model + perturbation
+    csv_path = f"results/{args.dataset}_{args.model_type}_{perturbation}.csv"
+
+    # Append to CSV
+    df.to_csv(
+        csv_path,
+        mode="a",
+        header=not os.path.exists(csv_path),
+        index=False
+    )
+
+    print(f"✔ Results saved to {csv_path}")
 
 
 
@@ -97,7 +156,8 @@ if __name__ == "__main__":
     set_output_dir(args)
     args.logger = Logger(args.output_dir, 'log.txt')
     args.logger.write('\n'+str(args))
-    args.device = torch.device('cuda')
+    #args.device = torch.device('cuda')
+    args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     set_all_seeds(args.seed+int(args.run.split('o')[0]))
     model_path_best = os.path.join(args.output_dir, 'checkpoint_best.bin')
 
@@ -200,3 +260,7 @@ if __name__ == "__main__":
     # print final res
     args.logger.write('Final val res: '+str(best_val_res))
     args.logger.write('Final test res: '+str(best_test_res))
+
+# Save final results to CSV (only for supervised training)
+if not args.pretrain:
+    save_results_csv(args, best_val_res, best_test_res)

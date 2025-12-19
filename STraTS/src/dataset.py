@@ -9,7 +9,7 @@ import os
 class Dataset:
     def __init__(self, args) -> None:
         # read data
-        filepath = '../data/processed/'+args.dataset+'.pkl'
+        filepath = '../data/processed/'+args.file+'.pkl'
         data, oc, train_ids, val_ids, test_ids = pickle.load(open(filepath,'rb'))
         run, totalruns = list(map(int, args.run.split('o')))
         num_train = int(np.ceil(args.train_frac*len(train_ids)))
@@ -40,12 +40,13 @@ class Dataset:
         ts_id_to_ind = {ts_id:i for i,ts_id in enumerate(sup_ts_ids)}
         data = data.loc[data.ts_id.isin(sup_ts_ids)]
         data['ts_ind'] = data['ts_id'].map(ts_id_to_ind)
-
+        self.ts_id_to_ind = ts_id_to_ind
+        self.ind_to_ts_id = {v: k for k, v in ts_id_to_ind.items()}
         # Get y and N
         oc = oc.loc[oc.ts_id.isin(sup_ts_ids)]
         oc['ts_ind'] = oc['ts_id'].map(ts_id_to_ind)
         oc = oc.sort_values(by='ts_ind')
-        y = np.array(oc['in_hospital_mortality'])
+        y = np.array(oc[args.target])
         N = len(sup_ts_ids)
 
         # To save
@@ -258,6 +259,25 @@ class Dataset:
         deltas = [self.deltas[i] for i in ind]
         values = [self.values[i] for i in ind]
         masks = [self.mask[i] for i in ind]
+        
+        ###
+        #print("---- DEBUG BATCH ----")
+        for batch_i, global_i in enumerate(ind):
+            d = deltas[batch_i]
+            v = values[batch_i]
+            m = masks[batch_i]
+
+            #print(f"[idx {global_i}] delta shape = {np.array(d).shape}, "
+            #    f"values shape = {np.array(v).shape}, mask shape = {np.array(m).shape}")
+
+            if np.array(d).ndim != 2:
+                print(global_i)
+                print(self.ind_to_ts_id[global_i])
+                print("   >>> BAD DELTA FOUND <<<")
+                print("   content of delta:", d)
+                raise Exception("Bad delta shape")        
+        ###
+        
         num_timestamps = np.array(list(map(len, deltas)))
         max_timestamps = max(num_timestamps)
         pad_lens = max_timestamps-num_timestamps
