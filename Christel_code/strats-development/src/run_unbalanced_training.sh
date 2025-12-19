@@ -4,7 +4,7 @@
 
 DATASET=$1          # first argument
 
-for pct in {20..60..20}; do
+for pct in 10 30 50 70 90; do
 
     # Preprocess data
     python preprocess_${DATASET}_unbalanced.py \
@@ -17,9 +17,9 @@ for pct in {20..60..20}; do
         --dataset $DATASET \
         --target unbalanced \
         --model_type gru \
-        --hid_dim 64 \
+        --hid_dim 43 \
         --dropout 0.2 \
-        --lr 5e-4 \
+        --lr 1e-4 \
         --file ${DATASET}_unbalanced_${pct} \
         --train_frac 1 \
         --max_epochs 2
