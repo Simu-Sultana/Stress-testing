@@ -9,7 +9,7 @@ import os
 class Dataset:
     def __init__(self, args) -> None:
         # read data
-        filepath = '../data/processed/'+args.file+'.pkl'
+        filepath = './data/processed/'+args.file+'.pkl'
         data, oc, train_ids, val_ids, test_ids = pickle.load(open(filepath,'rb'))
         run, totalruns = list(map(int, args.run.split('o')))
         num_train = int(np.ceil(args.train_frac*len(train_ids)))
