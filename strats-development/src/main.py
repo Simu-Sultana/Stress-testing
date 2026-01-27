@@ -1,8 +1,18 @@
 import argparse
 import os
-from utils import Logger, set_all_seeds
-import torch
+import csv
+
+import time
+import re
+from datetime import datetime
+
+import numpy as np
 import pandas as pd
+import torch
+from tqdm import tqdm
+from transformers.optimization import AdamW
+
+from utils import Logger, set_all_seeds
 from dataset_pretrain import PretrainDataset
 from dataset import Dataset
 from modeling_strats import Strats
@@ -12,12 +22,61 @@ from modeling_sand import SAND
 from modeling_grud import GRUD_TS
 from modeling_interpnet import InterpNet
 import numpy as np
-import time
 from tqdm import tqdm
 from transformers.optimization import AdamW
 from models import count_parameters
 from evaluator import Evaluator
 from evaluator_pretrain import PretrainEvaluator
+from pathlib import Path
+
+
+def get_repo_root() -> Path:
+    # .../strats-development/src/main.py -> .../strats-development
+    return Path(__file__).resolve().parent.parent
+
+
+def get_results_base_dir() -> Path:
+    # results folder under strats-development
+    return get_repo_root() / "results"
+
+
+def infer_perturbation_from_file(file_name: str) -> str:
+    """
+    Expected file format:
+      <dataset>_<perturbation>_<pct>_<seed>
+    Examples:
+      physionet_2012_subsampled_10_0
+      mimic_iii_sparsified-patientwise_50_0
+      mimic_iii_sparsified-tsid-varid_90_0
+    """
+    parts = file_name.split("_")
+    if len(parts) < 4:
+        return "unknown"
+
+    # dataset is usually first two parts: physionet_2012 / mimic_iii
+    rest = parts[2:]
+    if len(rest) < 3:
+        return "unknown"
+
+    perturbation = "_".join(rest[:-2])  # everything except pct and seed
+    return perturbation
+
+
+def get_experiment_dir(args) -> Path:
+    dataset = getattr(args, "dataset", "unknown_dataset")
+    target = getattr(args, "target", "unknown_target")
+    model = getattr(args, "model_type", "unknown_model")
+    file_name = getattr(args, "file", "unknown_file")
+
+    perturb = "unknown_perturb"
+    try:
+        perturb = infer_perturbation_from_file(file_name)
+    except Exception:
+        pass
+
+    base = get_results_base_dir()
+    exp_dir = base / dataset / target / model / perturb / file_name
+    return exp_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,13 +89,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--train_frac', type=float, default=0.5)
     parser.add_argument('--run', type=str, default='1o10')
     parser.add_argument('--target', type=str, default='in_hospital_mortality')
-
     # model related arguments
     parser.add_argument('--model_type', type=str, default='strats',
                         choices=['gru', 'tcn', 'sand', 'grud', 'interpnet',
                                  'strats', 'istrats'])
     parser.add_argument('--load_ckpt_path', type=str, default=None)
-
     ##  strats and istrats
     parser.add_argument('--max_obs', type=int, default=880)
     parser.add_argument('--hid_dim', type=int, default=32)
@@ -44,23 +101,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--num_heads', type=int, default=4)
     parser.add_argument('--dropout', type=float, default=0.2)
     parser.add_argument('--attention_dropout', type=float, default=0.2)
-
     ## gru: hid_dim, dropout
     ## tcn: dropout, filters=hid_dim
     parser.add_argument('--kernel_size', type=int, default=4)
-
     ## sand: num_layers, hid_dim, num_heads, dropout
     parser.add_argument('--r', type=int, default=24)
     parser.add_argument('--M', type=int, default=12)
-
     ## grud: hid_dim, dropout
     parser.add_argument('--max_timesteps', type=int, default=880)
-
     ## interpnet: hid_dim
     parser.add_argument('--hours_look_ahead', type=int, default=24)
     parser.add_argument('--ref_points', type=int, default=24)
 
-    # training/eval related arguments
+    # training/eval realated arguments
     parser.add_argument('--pretrain', type=int, default=0)
     parser.add_argument('--output_dir', type=str, default=None)
     parser.add_argument('--output_dir_prefix', type=str, default='')
@@ -76,145 +129,164 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--validate_every', type=int, default=None)
 
     args = parser.parse_args()
+
+    exp_dir = get_experiment_dir(args)
+    # Force everything downstream to use this experiment folder
+    args.output_dir = str(exp_dir)
+    args.output_dir_prefix = str(exp_dir)
     return args
 
 
 def set_output_dir(args: argparse.Namespace) -> None:
-    """Function to automatically set output dir if it is not passed in args."""
-    if args.output_dir is None:
-        if args.pretrain:
-            args.output_dir = '../outputs/' + args.dataset + '/' + args.output_dir_prefix + 'pretrain/'
-        else:
-            if args.load_ckpt_path is not None:
-                args.output_dir_prefix = 'finetune_' + args.output_dir_prefix
-            args.output_dir = '../outputs/' + args.dataset + '/' + args.output_dir_prefix
-            args.output_dir += args.model_type
-            if args.model_type == 'strats':
-                for param in ['num_layers', 'hid_dim', 'num_heads', 'dropout', 'attention_dropout', 'lr']:
-                    args.output_dir += ',' + param + ':' + str(getattr(args, param))
-            for param in ['train_frac', 'run']:
-                args.output_dir += '|' + param + ':' + str(getattr(args, param))
-    os.makedirs(args.output_dir, exist_ok=True)
-
-
-def _get_results_dir() -> str:
-    """
-    Always save results under:
-      strats-development/results/
-    regardless of current working directory.
-    This file lives in:
-      strats-development/src/main.py
-    """
-    base_dir = os.path.dirname(os.path.abspath(__file__))          # .../strats-development/src
-    results_dir = os.path.normpath(os.path.join(base_dir, "..", "results"))  # .../strats-development/results
-    os.makedirs(results_dir, exist_ok=True)
-    return results_dir
-
-
-def _parse_perturbation_from_file_tag(file_tag: str, fallback_seed: int):
-    """
-    Expected patterns (best case):
-      physionet_2012_<perturbation>_<pct>_<seed>
-    But we handle missing parts gracefully.
-    """
-    parts = (file_tag or "").split("_")
-
-    perturbation = "none"
-    pct = None
-    seed = fallback_seed
-
-    # Example:
-    # ["physionet", "2012", "sparsified", "10", "0"]
-    if len(parts) > 2:
-        perturbation = parts[2]
-
-    if len(parts) > 3:
-        try:
-            pct = int(parts[3])
-        except Exception:
-            pct = None
-
-    if len(parts) > 4:
-        try:
-            seed = int(parts[4])
-        except Exception:
-            seed = fallback_seed
-
-    return perturbation, pct, seed
-
-
-def save_results_csv(args, best_val_res, best_test_res,
-                     total_sec: float, train_sec: float, eval_sec: float):
-    """
-    Save best validation and test results + timing to a CSV file (append mode).
-    One row = one experiment run.
-    CSV saved under: strats-development/results/
-    """
-    results_dir = _get_results_dir()
+    repo_root = Path(__file__).resolve().parent.parent
+    results_root = repo_root / "results"
 
     file_tag = args.file
-    perturbation, pct, seed = _parse_perturbation_from_file_tag(file_tag, args.seed)
+    parts = file_tag.split("_")
+    perturbation = "_".join(parts[2:-2]) if len(parts) >= 5 else (parts[2] if len(parts) > 2 else "none")
 
-    # Base row information
+    target = getattr(args, "target", "in_hospital_mortality")
+
+    exp_dir = results_root / str(args.dataset) / str(target) / str(args.model_type) / str(perturbation) / str(file_tag)
+    exp_dir.mkdir(parents=True, exist_ok=True)
+
+    # Keep output_dir for anything that uses it
+    args.output_dir = str(exp_dir)
+
+    # Point to file paths (not folders)
+    args.log_path = str(exp_dir / "log.txt")  # use Logger(args.log_path)
+    args.best_ckpt_path = str(exp_dir / "best.pt")
+    args.last_ckpt_path = str(exp_dir / "last.pt")
+
+
+def collect_paper_hyperparams(args):
+    """
+    Returns a dict of hyperparameters (columns) for saving to results CSV.
+    Safe: if an attribute doesn't exist in args, we store None.
+    """
+    keys = [
+        # common
+        "model_type", "hid_dim", "dropout", "attention_dropout", "lr",
+        "num_layers", "num_heads", "kernel_size", "r", "M",
+        "max_timesteps", "hours_look_ahead", "ref_points",
+        "train_batch_size", "eval_batch_size", "gradient_accumulation_steps",
+        "max_epochs", "patience", "seed", "train_frac", "run", "target",
+        "max_obs", "pretrain", "output_dir", "output_dir_prefix",
+        "load_ckpt_path",
+    ]
+    out = {}
+    for k in keys:
+        out[k] = getattr(args, k, None)
+    return out
+
+
+def save_results_csv(args, best_val_res, best_test_res):
+    """
+    Save best validation and test results to a CSV file (append mode).
+    One row = one experiment run.
+
+    Folder structure:
+      results/<dataset>/<target>/<model>/<perturbation>/<file>/<file>.csv
+    """
+
+    repo_root = Path(__file__).resolve().parent.parent
+    results_root = repo_root / "results"
+
+    file_tag = args.file
+    parts = file_tag.split("_")
+
+    perturbation = "_".join(parts[2:-2]) if len(parts) >= 5 else (parts[2] if len(parts) > 2 else "none")
+    pct = int(parts[-2]) if len(parts) >= 2 and parts[-2].isdigit() else None
+    seed = int(parts[-1]) if len(parts) >= 1 and parts[-1].isdigit() else args.seed
+
+    exp_dir = (
+            results_root
+            / str(args.dataset)
+            / str(getattr(args, "target", "in_hospital_mortality"))
+            / str(args.model_type)
+            / str(perturbation)
+            / str(file_tag)
+    )
+    exp_dir.mkdir(parents=True, exist_ok=True)
+
+    csv_path = exp_dir / f"{args.file}.csv"
+
+    # ---------- build row ----------
     row = {
         "dataset": args.dataset,
-        "file_tag": args.file,
+        "target": getattr(args, "target", None),
         "model": args.model_type,
         "perturbation": perturbation,
+        "file": file_tag,
         "pct": pct,
         "seed": seed,
-        "lr": args.lr,
-        "hid_dim": args.hid_dim,
-        "dropout": args.dropout,
-        "train_frac": args.train_frac,
-        "run": args.run,
 
-        # timing columns (seconds)
-        "time_total_sec": round(float(total_sec), 6),
-        "time_train_loop_sec": round(float(train_sec), 6),
-        "time_eval_sum_sec": round(float(eval_sec), 6),
+        # NEW: run meta
+        "start_time": getattr(args, "run_start_time", None),
+        "end_time": getattr(args, "run_end_time", None),
+        "duration_sec": getattr(args, "run_duration_sec", None),
+        "device": getattr(args, "device_str", str(getattr(args, "device", None))),
+
+        # basic hparams
+        "lr": getattr(args, "lr", None),
+        "hid_dim": getattr(args, "hid_dim", None),
+        "dropout": getattr(args, "dropout", None),
+        "attention_dropout": getattr(args, "attention_dropout", None),
+        "num_layers": getattr(args, "num_layers", None),
+        "num_heads": getattr(args, "num_heads", None),
+        "kernel_size": getattr(args, "kernel_size", None),
+        "r": getattr(args, "r", None),
+        "M": getattr(args, "M", None),
+        "train_frac": getattr(args, "train_frac", None),
+        "max_epochs": getattr(args, "max_epochs", None),
+        "patience": getattr(args, "patience", None),
     }
 
-    # Add validation metrics
+    # all paper hyperparameter columns (filled where possible, else None)
+    row.update(collect_paper_hyperparams(args))
+
+    # metrics
     if best_val_res is not None:
         for k, v in best_val_res.items():
-            row[f"val_{k}"] = v
+            row[f"val_{k}"] = float(v) if hasattr(v, "__float__") else v
 
-    # Add test metrics
     if best_test_res is not None:
         for k, v in best_test_res.items():
-            row[f"test_{k}"] = v
+            row[f"test_{k}"] = float(v) if hasattr(v, "__float__") else v
 
-    df = pd.DataFrame([row])
-
-    # One CSV per dataset + model + perturbation
-    csv_path = os.path.join(results_dir, f"{args.dataset}_{args.model_type}_{perturbation}.csv")
-
-    df.to_csv(
-        csv_path,
-        mode="a",
-        header=not os.path.exists(csv_path),
-        index=False
-    )
+    # ---------- append to CSV ----------
+    file_exists = csv_path.exists()
+    with open(csv_path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
 
     print(f"✔ Results saved to {csv_path}")
 
 
 if __name__ == "__main__":
-    # -------------------------
-    # TIMING: total start
-    # -------------------------
-    t_total_start = time.perf_counter()
-    t_eval_total = 0.0
-    t_train_start = None
-    t_train_end = None
-
     # Preliminary setup.
     args = parse_args()
+
+    # infer perturbation early (from args.file)
+    perturbation = infer_perturbation_from_file(args.file)
+
+    # enforce target rule
+    if perturbation == "unbalanced":
+        args.target = "length_of_stay"
+    else:
+        args.target = "in_hospital_mortality"
+
+    args.run_start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    args.run_start_ts = time.time()
+
     set_output_dir(args)
     args.logger = Logger(args.output_dir, 'log.txt')
     args.logger.write('\n' + str(args))
-    args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # args.device = torch.device('cuda')
+    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    args.device_str = str(args.device)
     set_all_seeds(args.seed + int(args.run.split('o')[0]))
     model_path_best = os.path.join(args.output_dir, 'checkpoint_best.bin')
 
@@ -227,7 +299,6 @@ if __name__ == "__main__":
     model = model_class[args.model_type](args)
     model.to(args.device)
     count_parameters(args.logger, model)
-
     if args.load_ckpt_path is not None:
         curr_state_dict = model.state_dict()
         pt_state_dict = torch.load(args.load_ckpt_path)
@@ -242,50 +313,33 @@ if __name__ == "__main__":
     args.logger.write('\nNo. of training batches per epoch = '
                       + str(num_batches_per_epoch))
     args.max_steps = int(round(num_batches_per_epoch) * args.max_epochs)
-
     if args.validate_every is None:
         args.validate_every = int(np.ceil(num_batches_per_epoch))
-
     cum_train_loss, num_steps, num_batches_trained = 0, 0, 0
     wait, patience_reached = args.patience, False
     best_val_metric = -np.inf
     best_val_res, best_test_res = None, None
-
     optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr)
     train_bar = tqdm(range(args.max_steps))
     evaluator = PretrainEvaluator(args) if args.pretrain == 1 else Evaluator(args)
 
     # results before any training
     if args.validate_after < 0:
-        _t0 = time.perf_counter()
         results = evaluator.evaluate(model, dataset, 'val', train_step=-1)
-        t_eval_total += (time.perf_counter() - _t0)
-
         if not (args.pretrain):
-            _t0 = time.perf_counter()
             evaluator.evaluate(model, dataset, 'eval_train', train_step=-1)
-            t_eval_total += (time.perf_counter() - _t0)
-
-            _t0 = time.perf_counter()
             evaluator.evaluate(model, dataset, 'test', train_step=-1)
-            t_eval_total += (time.perf_counter() - _t0)
 
     model.train()
-
-    # -------------------------
-    # TIMING: training loop start
-    # -------------------------
-    t_train_start = time.perf_counter()
-
     for step in train_bar:
-        # load batch
+        # Load batch
         batch = dataset.get_batch()
         batch = {k: v.to(args.device) for k, v in batch.items()}
 
-        # forward pass
+        # Forward
         loss = model(**batch)
 
-        # backward pass
+        # Backward
         if not torch.isnan(loss):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.3)
@@ -293,7 +347,7 @@ if __name__ == "__main__":
                 optimizer.step()
                 optimizer.zero_grad()
 
-        # add to cum loss
+        # Track loss
         cum_train_loss += loss.item()
         num_steps += 1
         num_batches_trained += 1
@@ -305,32 +359,26 @@ if __name__ == "__main__":
                               + str(cum_train_loss / num_batches_trained))
             cum_train_loss, num_batches_trained = 0, 0
 
-        # run validation
+        # run validatation
         if (num_steps >= args.validate_after) and (num_steps % args.validate_every == 0):
             # get metrics on test and validation splits
-            _t0 = time.perf_counter()
             val_res = evaluator.evaluate(model, dataset, 'val', train_step=step)
-            t_eval_total += (time.perf_counter() - _t0)
-
             if not (args.pretrain):
-                _t0 = time.perf_counter()
                 evaluator.evaluate(model, dataset, 'eval_train', train_step=step)
-                t_eval_total += (time.perf_counter() - _t0)
-
-                _t0 = time.perf_counter()
                 test_res = evaluator.evaluate(model, dataset, 'test', train_step=step)
-                t_eval_total += (time.perf_counter() - _t0)
             else:
                 test_res = None
 
             model.train(True)
 
             # Save ckpt if there is an improvement.
-            curr_val_metric = val_res['loss_neg'] if args.pretrain else val_res['auprc'] + val_res['auroc']
+            curr_val_metric = val_res['loss_neg'] if args.pretrain \
+                else val_res['auprc'] + val_res['auroc']
             if curr_val_metric > best_val_metric:
                 best_val_metric = curr_val_metric
                 best_val_res, best_test_res = val_res, test_res
-                args.logger.write('\nSaving ckpt at ' + model_path_best)
+
+                args.logger.write("\nSaving ckpt at " + model_path_best)
                 torch.save(model.state_dict(), model_path_best)
                 wait = args.patience
             else:
@@ -340,34 +388,11 @@ if __name__ == "__main__":
                     args.logger.write('Patience reached')
                     break
 
-    # -------------------------
-    # TIMING: training loop end
-    # -------------------------
-    t_train_end = time.perf_counter()
-
     # print final res
     args.logger.write('Final val res: ' + str(best_val_res))
     args.logger.write('Final test res: ' + str(best_test_res))
 
-    # -------------------------
-    # TIMING: total end + summary
-    # -------------------------
-    t_total_end = time.perf_counter()
-    total_sec = t_total_end - t_total_start
-    train_sec = (t_train_end - t_train_start) if (t_train_start is not None and t_train_end is not None) else float('nan')
-    eval_sec = t_eval_total
-
-    timing_msg = (
-        "\n==========================================\n"
-        "⏱ TIMING SUMMARY\n"
-        f"Total runtime (end-to-end): {total_sec:.2f} sec\n"
-        f"Training loop time:         {train_sec:.2f} sec\n"
-        f"Evaluation time (sum):      {eval_sec:.2f} sec\n"
-        "==========================================\n"
-    )
-    print(timing_msg)
-    args.logger.write(timing_msg)
-
-    # Save final results to CSV (only for supervised training)
-    if not args.pretrain:
-        save_results_csv(args, best_val_res, best_test_res, total_sec, train_sec, eval_sec)
+if not args.pretrain:
+    args.run_end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    args.run_duration_sec = round(time.time() - args.run_start_ts, 3)
+    save_results_csv(args, best_val_res, best_test_res)
