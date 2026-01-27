@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Data & results
+outputs/
+results/
+data/
+*.pkl
+*.csv
+
+# Strats subfolders
+strats-development/data/
+strats-development/outputs/
+strats-development/results/
+
