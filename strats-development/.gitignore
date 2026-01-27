@@ -1,6 +1,12 @@
 # macOS
 .DS_Store
 
+# IDE
+.idea/
+
+# local outputs / runs
+outputs/
+
 # Data & results
 outputs/
 results/
