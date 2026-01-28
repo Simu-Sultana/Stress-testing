@@ -88,7 +88,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--file', type=str, default='physionet_2012')
     parser.add_argument('--train_frac', type=float, default=0.5)
     parser.add_argument('--run', type=str, default='1o10')
-    parser.add_argument('--target', type=str, default='in_hospital_mortality')
+    parser.add_argument('--target', type=str, default=None)
     # model related arguments
     parser.add_argument('--model_type', type=str, default='strats',
                         choices=['gru', 'tcn', 'sand', 'grud', 'interpnet',
@@ -129,11 +129,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--validate_every', type=int, default=None)
 
     args = parser.parse_args()
+    args.run_start_ts = time.time()
 
     exp_dir = get_experiment_dir(args)
     # Force everything downstream to use this experiment folder
-    args.output_dir = str(exp_dir)
-    args.output_dir_prefix = str(exp_dir)
+    if args.output_dir is None or args.output_dir == "":
+        args.output_dir = str(exp_dir)
+
+    if args.output_dir_prefix is None or args.output_dir_prefix == "":
+        args.output_dir_prefix = str(exp_dir)
+
     return args
 
 
@@ -150,8 +155,11 @@ def set_output_dir(args: argparse.Namespace) -> None:
     exp_dir = results_root / str(args.dataset) / str(target) / str(args.model_type) / str(perturbation) / str(file_tag)
     exp_dir.mkdir(parents=True, exist_ok=True)
 
-    # Keep output_dir for anything that uses it
-    args.output_dir = str(exp_dir)
+    # Keep user-provided output_dir if given, otherwise use computed exp_dir
+    if args.output_dir is None or args.output_dir == "":
+        args.output_dir = str(exp_dir)
+    if args.output_dir_prefix is None or args.output_dir_prefix == "":
+        args.output_dir_prefix = str(exp_dir)
 
     # Point to file paths (not folders)
     args.log_path = str(exp_dir / "log.txt")  # use Logger(args.log_path)
@@ -272,7 +280,7 @@ if __name__ == "__main__":
     # infer perturbation early (from args.file)
     perturbation = infer_perturbation_from_file(args.file)
 
-    # enforce target rule
+if args.target is None or args.target == "":
     if perturbation == "unbalanced":
         args.target = "length_of_stay"
     else:
@@ -284,6 +292,7 @@ if __name__ == "__main__":
     set_output_dir(args)
     args.logger = Logger(args.output_dir, 'log.txt')
     args.logger.write('\n' + str(args))
+
     # args.device = torch.device('cuda')
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     args.device_str = str(args.device)
@@ -309,12 +318,24 @@ if __name__ == "__main__":
 
     # training loop
     num_train = len(dataset.splits['train'])
-    num_batches_per_epoch = num_train / args.train_batch_size
-    args.logger.write('\nNo. of training batches per epoch = '
-                      + str(num_batches_per_epoch))
-    args.max_steps = int(round(num_batches_per_epoch) * args.max_epochs)
+
+    # batches per epoch must be an integer >= 1
+    num_batches_per_epoch = int(np.ceil(num_train / args.train_batch_size))
+    num_batches_per_epoch = max(1, num_batches_per_epoch)
+
+    args.logger.write('\nNo. of training batches per epoch = ' + str(num_batches_per_epoch))
+
+    args.max_steps = num_batches_per_epoch * args.max_epochs
+
     if args.validate_every is None:
-        args.validate_every = int(np.ceil(num_batches_per_epoch))
+        args.validate_every = num_batches_per_epoch
+
+    # num_batches_per_epoch = num_train/args.train_batch_size
+    # args.logger.write('\nNo. of training batches per epoch = '
+    #                 +str(num_batches_per_epoch))
+    # args.max_steps = int(round(num_batches_per_epoch)*args.max_epochs)
+    # if args.validate_every is None:
+    #    args.validate_every = int(np.ceil(num_batches_per_epoch))
     cum_train_loss, num_steps, num_batches_trained = 0, 0, 0
     wait, patience_reached = args.patience, False
     best_val_metric = -np.inf
@@ -396,3 +417,4 @@ if not args.pretrain:
     args.run_end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     args.run_duration_sec = round(time.time() - args.run_start_ts, 3)
     save_results_csv(args, best_val_res, best_test_res)
+
