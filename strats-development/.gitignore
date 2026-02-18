@@ -25,3 +25,7 @@ strats-development/data/
 strats-development/outputs/
 strats-development/results/
 strats-development/plots_per_metric/
+
+# Generated results (do not commit)
+results/
+strats-development/results/
