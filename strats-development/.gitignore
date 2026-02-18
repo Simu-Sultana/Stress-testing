@@ -29,3 +29,6 @@ strats-development/plots_per_metric/
 # Generated results (do not commit)
 results/
 strats-development/results/
+
+# Generated results (do not commit)
+src/results/
