@@ -1,29 +1,27 @@
 # macOS
 .DS_Store
-
-# macOS
-.DS_Store
 **/.DS_Store
-
-# outputs anywhere
-outputs/
-**/outputs/
 
 # IDE
 .idea/
 
-# local outputs / runs
+# outputs / runs (anywhere)
 outputs/
+**/outputs/
 
-# Data & results
-outputs/
-results/
+# Data & results (generated)
 data/
-*.pkl
-*.csv
+results/
+plots_per_metric/
 
-# Strats subfolders
+# Large artifacts
+*.pkl
+*.pt
+*.ckpt
+*.log
+
+# If you have a nested strats-development folder with generated artifacts
 strats-development/data/
 strats-development/outputs/
 strats-development/results/
-
+strats-development/plots_per_metric/
