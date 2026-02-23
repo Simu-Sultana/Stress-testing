@@ -1,14 +1,15 @@
 import argparse
 import os
-import pandas as pd
 import pickle
 import numpy as np
+import pandas as pd
+
 
 # --------------------------------------------------------
-# 1. Parse arguments
+# 1) Parse arguments
 # --------------------------------------------------------
 parser = argparse.ArgumentParser(
-    description="MIMIC-III patient-wise sparsification with CSV logging"
+    description="MIMIC-III patient-wise sparsification (GRU-D safe: keep labels + ensure non-empty delta)"
 )
 parser.add_argument("--data_dir", type=str, required=True)
 parser.add_argument("--out_dir", type=str, required=True)
@@ -20,133 +21,178 @@ RAW_DATA_PATH = args.data_dir.rstrip("/")
 OUT_DIR = args.out_dir.rstrip("/")
 os.makedirs(OUT_DIR, exist_ok=True)
 
-np.random.seed(args.seed)
+rng = np.random.RandomState(args.seed)
 
 print("\n==========================================")
-print(" PATIENT-WISE SPARSIFICATION (CSV LOGGING)")
+print(" PATIENT-WISE SPARSIFICATION (GRU-D SAFE)")
 print(" RAW_DATA_PATH =", RAW_DATA_PATH)
 print(" OUT_DIR       =", OUT_DIR)
 print(" PCT           =", args.pct)
 print(" SEED          =", args.seed)
 print("==========================================\n")
 
-# --------------------------------------------------------
-# 2. Helper: compute dataset statistics
-# --------------------------------------------------------
-def compute_stats(df):
-    tp = df.groupby("ts_id")["minute"].nunique()
-    meas = df.groupby("ts_id").size()
-    return tp.mean(), meas.mean()
 
 # --------------------------------------------------------
-# 3. Load dataset
+# 2) Helpers
+# --------------------------------------------------------
+def optimize_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Reduce memory footprint, keep semantics."""
+    if "ts_id" in df.columns:
+        df["ts_id"] = pd.to_numeric(df["ts_id"], errors="coerce", downcast="integer")
+    if "minute" in df.columns:
+        df["minute"] = pd.to_numeric(df["minute"], errors="coerce", downcast="integer")
+    if "variable" in df.columns and df["variable"].dtype == "object":
+        df["variable"] = df["variable"].astype("category")
+    if "value" in df.columns:
+        df["value"] = pd.to_numeric(df["value"], errors="coerce", downcast="float")
+    return df
+
+
+# --------------------------------------------------------
+# 3) Load original processed dataset
 # --------------------------------------------------------
 with open(os.path.join(RAW_DATA_PATH, "mimic_iii.pkl"), "rb") as f:
     data, oc, train_ids, val_ids, test_ids = pickle.load(f)
 
+data = optimize_dtypes(data)
+# IMPORTANT: keep oc as-is because it contains labels like in_hospital_mortality
+
+
 # --------------------------------------------------------
-# 4. Separate static vs temporal variables
+# 4) Separate static vs temporal variables
 # --------------------------------------------------------
 demo_features = [
     "Age", "Gender", "Height",
     "ICUType_1", "ICUType_2", "ICUType_3", "ICUType_4"
 ]
 
-demo = data[data["variable"].isin(demo_features)]
-ts = data[~data["variable"].isin(demo_features)]
+demo = data[data["variable"].isin(demo_features)].copy()
+ts   = data[~data["variable"].isin(demo_features)].copy()
+ts = ts.sort_values(["ts_id", "minute"])
+
 
 # --------------------------------------------------------
-# 5. Global statistics BEFORE
+# 5) Patient-wise sparsification with GRU-D safety
+#    Key constraints (to avoid BAD DELTA / delta=[]):
+#      - only keep rows with minute < MAX_MINUTE (matches Dataset cropping)
+#      - keep >= 2 distinct minutes per ts_id in that window
 # --------------------------------------------------------
-avg_tp_before, avg_meas_before = compute_stats(ts)
-print(
-    f"BEFORE sparsification: "
-    f"avg_timepoints={avg_tp_before:.2f}, "
-    f"avg_measurements={avg_meas_before:.2f}"
-)
+MAX_MINUTE = 880  # should match args.max_timesteps used in your pipeline
 
-# --------------------------------------------------------
-# 6. Patient-wise sparsification + logging
-# --------------------------------------------------------
 stats_records = []
-ts_sub_parts = []
+keep_idx_parts = []
+dropped_ts_ids = []
 
-for ts_id, group in ts.groupby("ts_id"):
+for ts_id, group in ts.groupby("ts_id", sort=False):
+    group = group.sort_values("minute")
+
+    # keep only rows in the window used downstream
+    group_win = group[group["minute"] < MAX_MINUTE]
+
     rows_before = len(group)
-    rows_kept = max(1, int(np.ceil(rows_before * args.pct / 100)))
-    rows_removed = rows_before - rows_kept
+    rows_in_win = len(group_win)
 
-    sampled = group.sample(n=rows_kept, random_state=args.seed)
-    ts_sub_parts.append(sampled)
+    if rows_in_win == 0:
+        dropped_ts_ids.append(int(ts_id))
+        stats_records.append({
+            "ts_id": int(ts_id),
+            "rows_before": int(rows_before),
+            "rows_in_window": 0,
+            "pct": int(args.pct),
+            "rows_kept": 0,
+            "rows_removed": int(rows_before),
+            "dropped_reason": "no_rows_before_MAX_MINUTE",
+        })
+        continue
 
+    uniq_minutes = group_win["minute"].unique()
+    if len(uniq_minutes) < 2:
+        dropped_ts_ids.append(int(ts_id))
+        stats_records.append({
+            "ts_id": int(ts_id),
+            "rows_before": int(rows_before),
+            "rows_in_window": int(rows_in_win),
+            "pct": int(args.pct),
+            "rows_kept": 0,
+            "rows_removed": int(rows_before),
+            "dropped_reason": "only_1_unique_minute_in_window",
+        })
+        continue
+
+    # sample within window
+    rows_kept_target = int(np.ceil(rows_in_win * args.pct / 100.0))
+    rows_kept = max(2, rows_kept_target)
+
+    take = min(rows_kept, rows_in_win)
+    sampled_idx = group_win.sample(n=take, random_state=args.seed).index.to_numpy()
+
+    keep_idx_parts.append(sampled_idx)
     stats_records.append({
-        "ts_id": ts_id,
-        "rows_before": rows_before,
-        "pct": args.pct,
-        "rows_kept": rows_kept,
-        "rows_removed": rows_removed
+        "ts_id": int(ts_id),
+        "rows_before": int(rows_before),
+        "rows_in_window": int(rows_in_win),
+        "pct": int(args.pct),
+        "rows_kept": int(len(sampled_idx)),
+        "rows_removed": int(rows_before - len(sampled_idx)),
+        "dropped_reason": "",
     })
 
-ts_sub = pd.concat(ts_sub_parts, ignore_index=True)
+keep_idx = np.concatenate(keep_idx_parts) if keep_idx_parts else np.array([], dtype=np.int64)
+ts_sub = ts.loc[keep_idx].copy()
 
-# --------------------------------------------------------
-# 7. Global statistics AFTER
-# --------------------------------------------------------
-avg_tp_after, avg_meas_after = compute_stats(ts_sub)
-print(
-    f"AFTER sparsification:  "
-    f"avg_timepoints={avg_tp_after:.2f}, "
-    f"avg_measurements={avg_meas_after:.2f}"
+# Collapse duplicates and avoid huge categorical cartesian products
+ts_sub = (
+    ts_sub.groupby(["ts_id", "minute", "variable"], as_index=False, observed=True)["value"]
+    .mean()
 )
 
-# --------------------------------------------------------
-# 8. Save per-patient CSV
-# --------------------------------------------------------
-stats_df = pd.DataFrame(stats_records)
+# enforce window after groupby (safety)
+ts_sub = ts_sub[ts_sub["minute"] < MAX_MINUTE]
+ts_sub = optimize_dtypes(ts_sub)
 
-csv_path = os.path.join(
-    OUT_DIR,
-    f"mimic_iii_patientwise_stats_{args.pct}_{args.seed}.csv"
-)
-stats_df.to_csv(csv_path, index=False)
+# Ensure still >=2 unique minutes per ts_id after collapsing
+mins_per_id = ts_sub.groupby("ts_id", observed=True)["minute"].nunique()
+good_ids = mins_per_id[mins_per_id >= 2].index.to_numpy()
+ts_sub = ts_sub[ts_sub["ts_id"].isin(good_ids)]
 
-print(f"\n✔ Saved per-patient stats CSV:")
-print(f"  {csv_path}")
+valid_ts_ids = ts_sub["ts_id"].unique()
+
 
 # --------------------------------------------------------
-# 9. Keep only valid admissions
+# 6) Filter demo/oc/splits (keep labels!)
 # --------------------------------------------------------
-valid_ts_ids = ts_sub.ts_id.unique()
+demo_sub = demo[demo["ts_id"].isin(valid_ts_ids)].copy()
+demo_sub = optimize_dtypes(demo_sub)
 
-demo = demo[demo.ts_id.isin(valid_ts_ids)]
-oc_sub = oc[oc.ts_id.isin(valid_ts_ids)]
+# keep oc labels (do NOT rebuild oc from ts_sub)
+oc_sub = oc[oc["ts_id"].isin(valid_ts_ids)].copy()
+oc_sub = optimize_dtypes(oc_sub)
 
 train_sub = np.intersect1d(train_ids, valid_ts_ids)
 val_sub   = np.intersect1d(val_ids, valid_ts_ids)
 test_sub  = np.intersect1d(test_ids, valid_ts_ids)
 
-# --------------------------------------------------------
-# 10. Merge final dataset
-# --------------------------------------------------------
-data_sub = (
-    pd.concat([demo, ts_sub])
-    .sort_values(by=["ts_id", "minute"])
-    .reset_index(drop=True)
-)
 
 # --------------------------------------------------------
-# 11. Save sparsified dataset
+# 7) Merge final dataset
 # --------------------------------------------------------
-out_path = os.path.join(
-    OUT_DIR,
-    f"mimic_iii_sparsified-patientwise_{args.pct}_{args.seed}.pkl"
-)
+data_sub = pd.concat([demo_sub, ts_sub], axis=0, copy=False, ignore_index=False)
+data_sub = data_sub.sort_values(by=["ts_id", "minute"])
 
+
+# --------------------------------------------------------
+# 8) Save stats CSV + pickle
+# --------------------------------------------------------
+stats_df = pd.DataFrame(stats_records)
+stats_csv = os.path.join(OUT_DIR, f"mimic_iii_patientwise_stats_{args.pct}_{args.seed}.csv")
+stats_df.to_csv(stats_csv, index=False)
+print(f"✔ Saved stats CSV: {stats_csv}")
+
+out_path = os.path.join(OUT_DIR, f"mimic_iii_sparsified-patientwise_{args.pct}_{args.seed}.pkl")
 with open(out_path, "wb") as f:
-    pickle.dump(
-        [data_sub, oc_sub, train_sub, val_sub, test_sub],
-        f
-    )
+    pickle.dump([data_sub, oc_sub, train_sub, val_sub, test_sub], f, protocol=pickle.HIGHEST_PROTOCOL)
 
-print(f"\n✔ Saved sparsified dataset:")
-print(f"  {out_path}")
+print(f"✔ Saved dataset: {out_path}")
+print(f"✔ Dropped ts_ids: {len(dropped_ts_ids)} (no-window or <2 minutes)")
+print(f"✔ Final valid ts_ids: {len(valid_ts_ids)}")
+print("✔ Uses observed=True in groupby to avoid huge memory allocation")

@@ -32,3 +32,8 @@ strats-development/results/
 
 # Generated results (do not commit)
 src/results/
+
+# HPC logs
+src/logs/
+*.out
+*.err
