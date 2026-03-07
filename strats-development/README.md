@@ -1,4 +1,4 @@
-# Stress-testing Temporal Deep Learning Models on Sparse and Irregular Clinical Time Series
+# Stress-testing Deep Learning Models on Sparse Longitudinal Health Data
 
 This repository contains code to preprocess clinical time-series datasets, generate perturbed `.pkl` files, train multiple temporal deep learning models, and analyze their robustness under controlled perturbation settings.
 
