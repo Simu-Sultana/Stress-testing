@@ -27,36 +27,64 @@ from evaluator import Evaluator
 from evaluator_pretrain import PretrainEvaluator
 
 def get_repo_root() -> Path:
-    # .../strats-development/src/main.py -> .../strats-development
     return Path(__file__).resolve().parent.parent
 
-
 def get_results_base_dir() -> Path:
-    # results folder under strats-development
     return get_repo_root() / "results"
 
-
-def infer_perturbation_from_file(file_name: str) -> str:
+def parse_file_tag(file_name: str) -> dict:
     """
-    Expected file format:
-      <dataset>_<perturbation>_<pct>_<seed>
-    Examples:
+    Supports:
+      physionet_2012_unbalanced_10
       physionet_2012_subsampled_10_0
-      mimic_iii_sparsified-patientwise_50_0
-      mimic_iii_sparsified-tsid-varid_90_0
+      mimic_iii_sparsified-tsid-varid_90_3
+      physionet_2012_fold_0_unbalanced_10
+      mimic_iii_fold_2_unbalanced_1
     """
     parts = file_name.split("_")
-    if len(parts) < 4:
-        return "unknown"
 
-    # dataset is usually first two parts: physionet_2012 / mimic_iii
-    rest = parts[2:]
-    if len(rest) < 3:
-        return "unknown"
+    result = {
+        "dataset": None,
+        "fold": None,
+        "perturbation": "unknown",
+        "pct": None,
+        "seed": None,
+    }
 
-    perturbation = "_".join(rest[:-2])  # everything except pct and seed
-    return perturbation
+    if file_name.startswith("physionet_2012"):
+        result["dataset"] = "physionet_2012"
+        rest = parts[2:]
+    elif file_name.startswith("mimic_iii"):
+        result["dataset"] = "mimic_iii"
+        rest = parts[2:]
+    else:
+        result["dataset"] = parts[0] if parts else "unknown"
+        rest = parts[1:]
 
+    if len(rest) >= 4 and rest[0] == "fold" and rest[1].isdigit():
+        result["fold"] = int(rest[1])
+        tail = rest[2:]
+    else:
+        tail = rest
+
+    if len(tail) >= 2 and tail[-1].isdigit() and tail[-2].isdigit():
+        result["pct"] = int(tail[-2])
+        result["seed"] = int(tail[-1])
+        pert_parts = tail[:-2]
+    elif len(tail) >= 1 and tail[-1].isdigit():
+        result["pct"] = int(tail[-1])
+        result["seed"] = None
+        pert_parts = tail[:-1]
+    else:
+        pert_parts = tail
+
+    if len(pert_parts) > 0:
+        result["perturbation"] = "_".join(pert_parts)
+
+    return result
+
+def infer_perturbation_from_file(file_name: str) -> str:
+    return parse_file_tag(file_name)["perturbation"]
 
 def get_experiment_dir(args) -> Path:
     dataset = getattr(args, "dataset", "unknown_dataset")
@@ -64,62 +92,15 @@ def get_experiment_dir(args) -> Path:
     model = getattr(args, "model_type", "unknown_model")
     file_name = getattr(args, "file", "unknown_file")
 
-    perturb = "unknown_perturb"
-    try:
-        perturb = infer_perturbation_from_file(file_name)
-    except Exception:
-        pass
+    info = parse_file_tag(file_name)
+    perturb = info["perturbation"]
+    fold = info["fold"]
 
     base = get_results_base_dir()
-    exp_dir = base / dataset / target / model / perturb / file_name
-    return exp_dir
 
-
-
-def get_repo_root() -> Path:
-    # .../strats-development/src/main.py -> .../strats-development
-    return Path(__file__).resolve().parent.parent
-
-def get_results_base_dir() -> Path:
-    # results folder under strats-development
-    return get_repo_root() / "results"
-
-def infer_perturbation_from_file(file_name: str) -> str:
-    """
-    Expected file format:
-      <dataset>_<perturbation>_<pct>_<seed>
-    Examples:
-      physionet_2012_subsampled_10_0
-      mimic_iii_sparsified-patientwise_50_0
-      mimic_iii_sparsified-tsid-varid_90_0
-    """
-    parts = file_name.split("_")
-    if len(parts) < 4:
-        return "unknown"
-
-    # dataset is usually first two parts: physionet_2012 / mimic_iii
-    rest = parts[2:]
-    if len(rest) < 3:
-        return "unknown"
-
-    perturbation = "_".join(rest[:-2])  # everything except pct and seed
-    return perturbation
-
-def get_experiment_dir(args) -> Path:
-    dataset = getattr(args, "dataset", "unknown_dataset")
-    target  = getattr(args, "target", "unknown_target")
-    model   = getattr(args, "model_type", "unknown_model")
-    file_name = getattr(args, "file", "unknown_file")
-
-    perturb = "unknown_perturb"
-    try:
-        perturb = infer_perturbation_from_file(file_name)
-    except Exception:
-        pass
-
-    base = get_results_base_dir()
-    exp_dir = base / dataset / target / model / perturb / file_name
-    return exp_dir
+    if fold is None:
+        return base / dataset / target / model / perturb / file_name
+    return base / dataset / target / model / perturb / f"fold_{fold}" / file_name
 
 def parse_args() -> argparse.Namespace:
     """Function to parse arguments."""
@@ -189,32 +170,29 @@ def set_output_dir(args: argparse.Namespace) -> None:
     results_root = repo_root / "results"
 
     file_tag = args.file
-    parts = file_tag.split("_")
+    info = parse_file_tag(file_tag)
 
-    # infer perturbation from filename pattern
-    perturbation = "_".join(parts[2:-2]) if len(parts) >= 5 else (parts[2] if len(parts) > 2 else "none")
+    perturbation = info["perturbation"]
+    fold = info["fold"]
 
-    # target fallback
     target = getattr(args, "target", None) or "in_hospital_mortality"
 
-    # canonical experiment directory
-    exp_dir = results_root / str(args.dataset) / str(target) / str(args.model_type) / str(perturbation) / str(file_tag)
+    if fold is None:
+        exp_dir = results_root / str(args.dataset) / str(target) / str(args.model_type) / str(perturbation) / str(file_tag)
+    else:
+        exp_dir = results_root / str(args.dataset) / str(target) / str(args.model_type) / str(perturbation) / f"fold_{fold}" / str(file_tag)
 
-    # prefer user-provided dirs if present, else use canonical exp_dir
     prefix = (getattr(args, "output_dir_prefix", None) or "").strip()
-    outdir  = (getattr(args, "output_dir", None) or "").strip()
+    outdir = (getattr(args, "output_dir", None) or "").strip()
     base_dir = Path(prefix or outdir or exp_dir)
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    # make everything consistent downstream
     args.output_dir = str(base_dir)
     args.output_dir_prefix = str(base_dir)
 
-    # file paths
     args.log_path = str(base_dir / "log.txt")
     args.best_ckpt_path = str(base_dir / "best.pt")
     args.last_ckpt_path = str(base_dir / "last.pt")
-
 
 def collect_paper_hyperparams(args):
     """
@@ -233,27 +211,16 @@ def collect_paper_hyperparams(args):
     return {k: getattr(args, k, None) for k in keys}
 
 def save_results_csv(args, best_val_res, best_test_res):
-    
     repo_root = Path(__file__).resolve().parent.parent
     results_root = repo_root / "results"
 
     file_tag = getattr(args, "file", "unknown_file")
-    parts = file_tag.split("_")
+    info = parse_file_tag(file_tag)
 
-    # perturbation name (everything after dataset tokens and before pct/seed)
-    perturbation = "_".join(parts[2:-2]) if len(parts) >= 5 else (parts[2] if len(parts) > 2 else "none")
-
-    pct = None
-    seed = getattr(args, "seed", None)
-
-    if len(parts) >= 2 and parts[-1].isdigit() and parts[-2].isdigit():
-        # ..._<pct>_<seed>
-        pct = int(parts[-2])
-        seed = int(parts[-1])
-    elif len(parts) >= 1 and parts[-1].isdigit():
-        # ..._<pct> (no seed)
-        pct = int(parts[-1])
-        seed = getattr(args, "seed", None)
+    perturbation = info["perturbation"]
+    pct = info["pct"]
+    seed = info["seed"] if info["seed"] is not None else getattr(args, "seed", None)
+    fold = info["fold"]
 
     base_dir = Path(
         (getattr(args, "output_dir_prefix", None) or "").strip()
@@ -263,23 +230,21 @@ def save_results_csv(args, best_val_res, best_test_res):
     base_dir.mkdir(parents=True, exist_ok=True)
     csv_path = base_dir / f"{file_tag}.csv"
 
-    # ---------- build row ----------
     row = {
         "dataset": getattr(args, "dataset", None),
         "target": getattr(args, "target", None),
         "model": getattr(args, "model_type", None),
         "perturbation": perturbation,
         "file": file_tag,
+        "fold": fold,
         "pct": pct,
         "seed": seed,
 
-        # run meta
         "start_time": getattr(args, "run_start_time", None),
         "end_time": getattr(args, "run_end_time", None),
         "duration_sec": getattr(args, "run_duration_sec", None),
         "device": getattr(args, "device_str", str(getattr(args, "device", None))),
 
-        # basic hparams 
         "lr": getattr(args, "lr", None),
         "hid_dim": getattr(args, "hid_dim", None),
         "dropout": getattr(args, "dropout", None),
@@ -324,7 +289,7 @@ if __name__ == "__main__":
     perturbation = infer_perturbation_from_file(args.file)
 
     if args.target is None or args.target.strip() == "":
-        args.target = "length_of_stay" if perturbation == "unbalanced" else "in_hospital_mortality"
+        args.target = "unbalanced" if perturbation == "unbalanced" else "in_hospital_mortality"
 
     args.run_start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     args.run_start_ts = time.time()

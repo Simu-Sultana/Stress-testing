@@ -23,7 +23,7 @@ DEFAULT_SEED=0
 DEFAULT_MAX_EPOCHS=50
 
 # Percentages to loop over (your PKLs must exist for these)
-PCTS=(10 50 90)
+PCTS=(1 2 5 10 20 30 40 50 60 70 80 90 100)
 
 # Helper: run a single experiment combo
 run_one () {
@@ -95,17 +95,21 @@ run_one () {
     # ------------------------------------------------------------
     # PREPROCESS STEP (COMMENTED OUT because you already have PKLs)
     # ------------------------------------------------------------
-    # PERTURB_SCRIPT_NAME="${PERTURB//-/_}"
-    # PREPROCESS_SCRIPT="preprocess_${DATASET}_${PERTURB_SCRIPT_NAME}.py"
-    # python "$PREPROCESS_SCRIPT" \
-    #   --data_dir ../data/processed \
-    #   --out_dir ../data/processed \
-    #   --seed "$SEED" \
-    #   --pct "$pct"
+    PREPROCESS_SCRIPT="preprocess_${DATASET}_${PERTURB}.py"
+    if [[ ! -f "$PREPROCESS_SCRIPT" ]]; then
+      echo "ERROR: preprocess script not found: $PREPROCESS_SCRIPT"
+      exit 1
+    fi
+    python "$PREPROCESS_SCRIPT" \
+       --data_dir ../data/processed \
+       --out_dir ../data/processed \
+       --seed "$SEED" \
+       --pct "$pct"
 
     # Train (your code loads ./data/processed/<file>.pkl)
     python main.py \
       --dataset "$DATASET" \
+      --target "in_hospital_mortality" \
       --file "${DATASET}_${PERTURB}_${pct}_${SEED}" \
       --model_type "$MODEL" \
       --hid_dim "$HID_DIM" \
@@ -124,7 +128,7 @@ run_one () {
     # ------------------------------------------------------------
     # CLEANUP STEP (COMMENTED OUT for now)
     # ------------------------------------------------------------
-    # rm -f ../data/processed/"${DATASET}_${PERTURB}_${pct}_${SEED}"*
+    rm -f ../data/processed/"${DATASET}_${PERTURB}_${pct}_${SEED}"*
   done
 }
 

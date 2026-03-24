@@ -1,0 +1,120 @@
+Shorter Version
+# Check free GPU nodes
+sinfo -N -o "%N %P %T %G %C"
+# Check free GPU nodes are free now
+sinfo -N -o "%N %P %T %G %C" | grep -E "idle|mixed"
+
+# Start interactive GPU session
+srun --partition=work --gres=gpu:1 --cpus-per-task=8 --time=04:00:00 --pty bash
+
+# Submit batch job
+sbatch trial2.sbatch
+
+# Watch job status every 5 min
+watch -n 300 "squeue -u $USER"
+
+# Check failed jobs in batch
+sacct -j JOBID --format=JobID,JobName,State,ExitCode | egrep "FAILED|CANCELLED|TIMEOUT|OUT_OF_MEMORY"
+
+
+
+
+
+Longer Version
+# =========================================================
+# 1) CHECK WHICH GPU NODES ARE FREE / AVAILABLE
+# =========================================================
+# Show node name, partition, state, GPU type, and CPU usage
+sinfo -N -o "%N %P %T %G %C"
+
+# If a node is idle, it is usually free to use.
+# Example meanings:
+# idle       = free
+# allocated  = fully in use
+# mixed      = partly in use
+# drain/down = not usable
+
+
+# =========================================================
+# 2) OPEN AN INTERACTIVE GPU SESSION (srun)
+# =========================================================
+# Request 1 GPU on work partition for 10 hours
+srun --partition=work --gres=gpu:1 --cpus-per-task=8 --time=10:00:00 --pty bash
+
+# If you want a specific GPU partition, example:
+srun --partition=v100 --gres=gpu:1 --cpus-per-task=8 --time=10:00:00 --pty bash
+
+# After entering the node:
+nvidia-smi
+
+# Then activate environment:
+source /home/hpc/iwbn/iwbn127h/miniconda3/etc/profile.d/conda.sh
+conda activate strats
+
+
+# =========================================================
+# 3) SUBMIT A BATCH JOB (.sbatch file)
+# =========================================================
+# Submit your batch script
+sbatch trial2.sbatch
+
+# Example output:
+# Submitted batch job 1550997
+
+# Check your currently running/pending jobs
+squeue -u $USER
+
+# Check details for one job
+scontrol show job 1550997
+
+
+# =========================================================
+# 4) WATCH JOB UPDATES EVERY 5 MINUTES
+# =========================================================
+# Refresh queue status every 5 minutes = 300 seconds
+watch -n 300 "squeue -u $USER"
+
+# For one specific job, refresh every 5 minutes
+watch -n 300 "sacct -j 1550997 --format=JobID,JobName,State,Elapsed,ExitCode | tail -n +3"
+
+# If you want faster refresh, e.g. every 30 seconds:
+watch -n 30 "squeue -u $USER"
+
+
+# =========================================================
+# 5) CHECK WHICH JOBS FAILED
+# =========================================================
+# Show job state and exit code for one batch job (including array tasks)
+sacct -j 1550997 --format=JobID,JobName,State,ExitCode,Elapsed
+
+# Show only failed/cancelled/timeout jobs from that batch
+sacct -j 1550997 --format=JobID,JobName,State,ExitCode | egrep "FAILED|CANCELLED|TIMEOUT|OUT_OF_MEMORY"
+
+# If it is an array job, failed tasks usually look like:
+# 1550997_80   FAILED
+# 1550997_82   OUT_OF_MEMORY
+# 1550997_93   TIMEOUT
+
+# Check log files of a failed array task
+ls logs/*1550997_80*
+cat logs/<your_log_file>.err
+cat logs/<your_log_file>.out
+
+
+# =========================================================
+# EXTRA USEFUL COMMANDS
+# =========================================================
+# See live GPU usage on the node you are currently on
+nvidia-smi
+
+# See all your jobs
+squeue -u $USER
+
+# Cancel one job
+scancel 1550997
+
+# Cancel one array task only
+scancel 1550997_80
+
+# Cancel all your jobs
+scancel -u $USER
