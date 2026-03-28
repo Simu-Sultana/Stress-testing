@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=mimic_unbal_cv_allfolds
+#SBATCH --job-name=mimiciii_unbal_cv_allfolds
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 #SBATCH --time=24:00:00
@@ -35,9 +35,9 @@ FOLDS=(0 1 2)
 
 NUM_PCTS=${#PCTS[@]}
 NUM_MODELS=${#MODELS[@]}
+COMBOS_PER_FOLD=$((NUM_PCTS * NUM_MODELS))
 
 TASK_ID=${SLURM_ARRAY_TASK_ID}
-COMBOS_PER_FOLD=$((NUM_PCTS * NUM_MODELS))
 
 FOLD_INDEX=$((TASK_ID / COMBOS_PER_FOLD))
 REMAINDER=$((TASK_ID % COMBOS_PER_FOLD))

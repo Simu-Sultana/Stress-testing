@@ -10,7 +10,7 @@ MAX_EPOCHS="${5:-50}"
 DATA_DIR="../data/processed"
 OUT_DIR="../data/processed"
 
-TARGET="in_hospital_mortality"
+TARGET="unbalanced"
 PERTURB="unbalanced"
 RESULTS_ROOT="../results_cv"
 
