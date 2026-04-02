@@ -6,6 +6,7 @@ sinfo -N -o "%N %P %T %G %C" | grep -E "idle|mixed"
 
 # Start interactive GPU session
 srun --partition=work --gres=gpu:1 --cpus-per-task=8 --time=04:00:00 --pty bash
+srun -p work -w tg080 --gres=gpu:1 --cpus-per-task=4 --time=04:00:00 --pty bash
 
 # Submit batch job
 sbatch trial2.sbatch

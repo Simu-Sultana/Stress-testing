@@ -78,7 +78,7 @@ for (ts_id, var), group in ts.groupby(["ts_id", "variable"]):
     rows_kept = max(1, int(np.ceil(rows_before * args.pct / 100)))
     rows_removed = rows_before - rows_kept
 
-    sampled = group.sample(n=rows_kept, random_state=args.seed)
+    sampled = group.sample(n=rows_kept, random_state=args.seed).sort_values("minute")
     ts_sub_parts.append(sampled)
 
     stats_records.append({
