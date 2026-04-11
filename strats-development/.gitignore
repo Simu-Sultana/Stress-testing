@@ -45,3 +45,6 @@ strats-development/src/logs/
 strats-development/src/results/
 aggregated/
 plots_per_metrics/
+
+aggregated/
+plots_per_metrics/
