@@ -12,7 +12,7 @@ srun -p work -w tg080 --gres=gpu:1 --cpus-per-task=4 --time=04:00:00 --pty bash
 sbatch trial2.sbatch
 
 # Watch job status every 5 min
-watch -n 300 "squeue -u $USER"
+watch -n 5 "squeue -u $USER"
 
 # Check failed jobs in batch
 sacct -j JOBID --format=JobID,JobName,State,ExitCode | egrep "FAILED|CANCELLED|TIMEOUT|OUT_OF_MEMORY"

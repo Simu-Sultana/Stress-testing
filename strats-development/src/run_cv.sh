@@ -97,7 +97,7 @@ run_one () {
     --file "$FILE" \
     --output_dir "$RUN_DIR" \
     --output_dir_prefix "$FOLD_DIR" \
-    --train_frac 0.8 \
+    --train_frac 1.0 \
     --max_epochs "$MAX_EPOCHS" \
     --hid_dim "$HID_DIM" \
     --dropout "$DROPOUT" \

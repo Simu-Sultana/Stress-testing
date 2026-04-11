@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=mimic_iii_grud_missing
+#SBATCH --job-name=mimic_unbal_cv
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 #SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
 #SBATCH --partition=work
-#SBATCH --array=0-9%10
+#SBATCH --array=0-209%20
 
 set -euo pipefail
 
@@ -31,26 +31,43 @@ echo "Using python3: $(which python3)"
 python3 -c "import sys; print('Executable:', sys.executable)"
 python3 -c "import pandas as pd; print('pandas OK:', pd.__version__)"
 
-# Explicitly list all 10 missing combinations as parallel arrays
-FOLDS=(0 0 0 0 1 1 1 1 2 2)
-PCTS=( 1 2 3 4 1 2 3 4 1 2)
+MODELS=(gru grud tcn sand strats)
+PCTS=(1 2 3 4 5 6 7 8 9 10 20 30 40 50)
+FOLDS=(0 1 2)
+
+NUM_MODELS=${#MODELS[@]}
+NUM_PCTS=${#PCTS[@]}
+NUM_FOLDS=${#FOLDS[@]}
+TOTAL_JOBS=$((NUM_MODELS * NUM_FOLDS * NUM_PCTS))
 
 TASK_ID=${SLURM_ARRAY_TASK_ID}
 
-FOLD="${FOLDS[$TASK_ID]}"
-PCT="${PCTS[$TASK_ID]}"
+if (( TASK_ID < 0 || TASK_ID >= TOTAL_JOBS )); then
+  echo "ERROR: SLURM_ARRAY_TASK_ID=$TASK_ID is out of range (0 to $((TOTAL_JOBS - 1)))"
+  exit 1
+fi
+
+MODEL_INDEX=$((TASK_ID / (NUM_FOLDS * NUM_PCTS)))
+REMAINDER=$((TASK_ID % (NUM_FOLDS * NUM_PCTS)))
+
+FOLD_INDEX=$((REMAINDER / NUM_PCTS))
+PCT_INDEX=$((REMAINDER % NUM_PCTS))
+
+MODEL="${MODELS[$MODEL_INDEX]}"
+FOLD="${FOLDS[$FOLD_INDEX]}"
+PCT="${PCTS[$PCT_INDEX]}"
 
 DATASET="mimic_iii"
-MODEL="grud"
 MAX_EPOCHS="50"
 
 echo "=============================================="
-echo "SLURM_ARRAY_TASK_ID = $TASK_ID"
+echo "SLURM_ARRAY_TASK_ID = $SLURM_ARRAY_TASK_ID"
 echo "DATASET             = $DATASET"
 echo "MODEL               = $MODEL"
 echo "FOLD                = $FOLD"
 echo "PCT                 = $PCT"
 echo "MAX_EPOCHS          = $MAX_EPOCHS"
+echo "TOTAL_JOBS          = $TOTAL_JOBS"
 echo "HOST                = $(hostname)"
 echo "PYTHON              = $(which python3)"
 echo "START_TIME          = $(date)"
