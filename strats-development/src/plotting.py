@@ -97,7 +97,7 @@ def plot_subsampled(dataset):
     )
     axes[0].set_xlabel("Perturbation (%)")
     axes[0].set_ylabel("AUROC")
-    axes[0].set_title(f"{dataset} - subsampled")
+    axes[0].set_title("Mean score over 10 seeds")
     axes[0].set_xticks(pct_order)
     axes[0].grid(alpha=0.3)
 
