@@ -8,7 +8,7 @@ Stress-testing Deep Learning Models on Sparse Laboratory Data
 This project evaluates how different deep learning models behave under **non-ICU-like data conditions**, focusing on robustness against:
 
 - small cohort size  
-- sparsity in measurements
+- sparsity in measurements  
 - class imbalance  
 
 ---
@@ -47,7 +47,7 @@ The following perturbations were applied:
 - Randomly removes measurements  
 - Uses tsid-varid strategy  
 
-### 3. Unbalanced
+### 3. Imbalance
 - Introduces class imbalance  
 - Based on length-of-stay (LOS) thresholding  
 
@@ -71,17 +71,17 @@ The following perturbations were applied:
 - Overall impact is **smaller compared to other perturbations**  
 - Some variability across seeds (outliers observed)  
 
- **Insight:**  
+**Insight:**  
 Sparsification has **less impact** on model performance compared to subsampling and imbalance.
 
 ---
 
-### 3. Imbalanced Data
+### 3. Imbalance
 
 - Performance decreases when positive class < 30%  
 - Significant drop when positive class < 20%  
 
- **Insight:**  
+**Insight:**  
 Class imbalance has a **strong negative impact** on model performance.
 
 ---
@@ -91,7 +91,7 @@ Class imbalance has a **strong negative impact** on model performance.
 - All models show **similar trends across perturbations**  
 - No model is consistently robust across all settings  
 
- **Important Observations:**
+**Important Observations:**
 - Model performance is driven more by **data characteristics** than model choice  
 - Differences between models are **smaller than the effect of perturbations**
 
@@ -102,7 +102,7 @@ Class imbalance has a **strong negative impact** on model performance.
 - GRU-D struggles under high sparsity  
 - Requires at least two observations to compute time gaps (delta)  
 
- **Insight:**  
+**Insight:**  
 GRU-D is **not robust to extreme sparsity**
 
 ---
