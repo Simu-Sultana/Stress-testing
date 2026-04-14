@@ -1,10 +1,9 @@
-# Stress-testing Deep Learning Models on Sparse Longitudinal Health Data
+# Stress-testing Deep Learning Models on Sparse Laboratory Data
 
 This repository contains code to preprocess clinical time-series datasets, generate perturbed `.pkl` files, train multiple temporal deep learning models, and analyze their robustness under controlled perturbation settings.
 
 The project focuses on stress-testing temporal models under the following perturbations:
 - **Subsampled**
-- **Sparsified (patientwise)**
 - **Sparsified (tsid-varid)**
 - **Unbalanced**
 
@@ -131,12 +130,6 @@ python3 src/preprocess_mimic_iii_subsampled.py \
   --seed 2 \
   --pct 20
 
-python3 src/preprocess_mimic_iii_sparsified-patientwise.py \
-  --data_dir data/processed \
-  --out_dir data/processed \
-  --seed 0 \
-  --pct 40
-
 python3 src/preprocess_mimic_iii_sparsified-tsid-varid.py \
   --data_dir data/processed \
   --out_dir data/processed \
@@ -158,12 +151,6 @@ python3 src/preprocess_physionet_2012_subsampled.py \
   --seed 0 \
   --pct 20
 
-python3 src/preprocess_physionet_2012_sparsified-patientwise.py \
-  --data_dir data/processed \
-  --out_dir data/processed \
-  --seed 2 \
-  --pct 40
-
 python3 src/preprocess_physionet_2012_sparsified-tsid-varid.py \
   --data_dir data/processed \
   --out_dir data/processed \
@@ -182,7 +169,6 @@ python3 src/preprocess_physionet_2012_unbalanced.py \
 
 For the perturbations:
 - `subsampled`
-- `sparsified-patientwise`
 - `sparsified-tsid-varid`
 
 The preprocessing is run for:
@@ -193,7 +179,7 @@ For:
 - `unbalanced`
 
 The preprocessing is run for:
-- percentages: `10, 20, 30, ..., 90`
+- percentages: `10, 20, 30, ..., 50`
 - no seed
 
 ### 5.1 Full loop for MIMIC-III
@@ -201,7 +187,7 @@ The preprocessing is run for:
 ```bash
 PCTS=(10 20 30 40 50 60 70 80 90)
 SEEDS=(0 2)
-PERTS_WITH_SEED=("subsampled" "sparsified-patientwise" "sparsified-tsid-varid")
+PERTS_WITH_SEED=("subsampled" "sparsified-tsid-varid")
 
 for pert in "${PERTS_WITH_SEED[@]}"; do
   for seed in "${SEEDS[@]}"; do
@@ -228,7 +214,7 @@ done
 ```bash
 PCTS=(10 20 30 40 50 60 70 80 90)
 SEEDS=(0 2)
-PERTS_WITH_SEED=("subsampled" "sparsified-patientwise" "sparsified-tsid-varid")
+PERTS_WITH_SEED=("subsampled" "sparsified-tsid-varid")
 
 for pert in "${PERTS_WITH_SEED[@]}"; do
   for seed in "${SEEDS[@]}"; do
@@ -256,7 +242,7 @@ done
 
 The training script passes file names such as:
 - `mimic_iii_subsampled_20_0`
-- `physionet_2012_sparsified-patientwise_40_2`
+- `physionet_2012_sparsified-tsid-varid_40_2`
 - `mimic_iii_unbalanced_80`
 
 So the perturbed `.pkl` files generated during preprocessing should follow the same naming logic.
@@ -271,13 +257,6 @@ So the perturbed `.pkl` files generated during preprocessing should follow the s
 - seed: `0`
 
 #### Example 2
-`physionet_2012_sparsified-patientwise_40_2`
-- dataset: `physionet_2012`
-- perturbation: `sparsified-patientwise`
-- percentage: `40`
-- seed: `2`
-
-#### Example 3
 `mimic_iii_unbalanced_80`
 - dataset: `mimic_iii`
 - perturbation: `unbalanced`
@@ -312,7 +291,7 @@ DATASETS=(physionet_2012 mimic_iii)
 MODELS=(gru grud tcn sand strats)
 PCTS=(10 20 30 40 50 60 70 80 90)
 SEEDS=(0 2)
-PERTS=(subsampled sparsified-patientwise sparsified-tsid-varid)
+PERTS=(subsampled sparsified-tsid-varid)
 
 hparams () {
   local d="$1" m="$2"
