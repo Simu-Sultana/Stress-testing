@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pkl
+*.pt
+*.log
+logs/
+results/
+outputs/
+checkpoints/
+.env
+venv/
+.venv/
