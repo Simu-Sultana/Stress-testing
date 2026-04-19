@@ -98,13 +98,15 @@ python src/plot_metrics.py
 
 ## Detailed Documentation
 
-For more detailed instructions, see:
+For more detailed instructions, see the [`docs/`](docs/) folder:
 
-- GPU / HPC usage
-- Hyperparameter settings
-- PKL generation pipeline
-- Model training and execution
-- Repository structure
+- [GPU / HPC usage](docs/gpu_hpc.md)
+- [Hyperparameter settings](docs/hyperparameters.md)
+- [PKL generation pipeline](docs/pkl_pipeline.md)
+- [Model training and execution](docs/training.md)
+- [Repository structure](docs/structure.md)
+
+For full end-to-end reproduction of all experiments, see [`Reproduce_Guide.md`](Reproduce_Guide.md).
 
 ---
 
@@ -112,10 +114,8 @@ For more detailed instructions, see:
 
 This project uses the following datasets:
 
-- **MIMIC-III** — Requires credentialed access.
-- **PhysioNet 2012 Challenge dataset**
-
-Dataset source: [PhysioNet](https://physionet.org)
+- **MIMIC-III** — Requires credentialed access via [PhysioNet MIMIC-III](https://physionet.org/content/mimiciii/1.4/).
+- **PhysioNet 2012 Challenge dataset** — Freely available at [PhysioNet 2012](https://physionet.org/content/challenge-2012/1.0.0/).
 
 After obtaining and processing the datasets, place the base `.pkl` files in:
 
@@ -182,7 +182,7 @@ mimic_iii_subsampled_20_0.pkl
 physionet_2012_subsampled_20_0.pkl
 ```
 
-For more preprocessing details, see: [PKL generation pipeline](docs/)
+For more preprocessing details, see: [PKL generation pipeline](docs/pkl_pipeline.md)
 
 ---
 
@@ -203,9 +203,9 @@ python src/main.py --dataset mimic_iii --model_type gru --file mimic_iii_subsamp
 | `--dataset` | Dataset name | `mimic_iii`, `physionet_2012` |
 | `--model_type` | Model type | `gru`, `grud`, `tcn`, `sand`, `strats` |
 | `--file` | Dataset file tag | `mimic_iii_subsampled_20_0` |
-| `--output_dir` | Optional custom output directory | |
+| `--output_dir` | Optional custom output directory | `results/my_run` |
 
-For more training details, see: [Model training and execution](docs/) and [Hyperparameter settings](docs/)
+For more training details, see: [Model training and execution](docs/training.md) and [Hyperparameter settings](docs/hyperparameters.md)
 
 ---
 
@@ -227,10 +227,10 @@ results/mimic_iii/IHM/GRU/subsampled/mimic_iii_subsampled_20_0/
 
 | File | Description |
 |---|---|
-| `log.txt` | Training progress |
-| `best.pt` | Best model checkpoint |
-| `last.pt` | Final model checkpoint |
-| `<run_name>.csv` | Evaluation metrics |
+| `log.txt` | Training progress per epoch |
+| `best.pt` | Best model checkpoint (highest validation AUROC) |
+| `last.pt` | Final model checkpoint after all epochs |
+| `<run_name>.csv` | Evaluation metrics for that run |
 
 ---
 
@@ -238,15 +238,17 @@ results/mimic_iii/IHM/GRU/subsampled/mimic_iii_subsampled_20_0/
 
 The project reports the following evaluation metrics:
 
-| Metric | Description |
-|---|---|
-| AUROC | Overall ranking performance |
-| AUPRC | Especially important under class imbalance |
-| Accuracy | Threshold-based classification performance |
-| F1-score | Balance between precision and recall |
-| Recall | Sensitivity to positive cases |
+| Metric | Description | What to look for |
+|---|---|---|
+| AUROC | Overall ranking performance | Values above 0.75 indicate good discrimination |
+| AUPRC | Ranking performance under class imbalance | More informative than AUROC when classes are imbalanced |
+| Accuracy | Threshold-based classification performance | Can be misleading under imbalance; use alongside F1 |
+| F1-score | Balance between precision and recall | Values above 0.6 indicate reasonable performance |
+| Recall | Sensitivity to positive cases | Critical for clinical tasks where missing positives is costly |
 
-Higher values indicate better predictive performance.
+Higher values indicate better predictive performance across all metrics.
+
+> **Interpreting degradation**: As perturbation severity increases (e.g. reducing cohort size from 90% to 10%), expect AUROC and AUPRC to drop. A robust model degrades gradually; a fragile one shows a sharp drop at moderate perturbation levels.
 
 ---
 
@@ -258,7 +260,7 @@ Plotting scripts generate summary figures from aggregated experiment results.
 
 | Folder | Description |
 |---|---|
-| `plots_per_metric/` | Metric-wise comparison plots |
+| `plots_per_metric/` | Metric-wise comparison plots across all perturbation levels |
 | `final_plots/` | Final selected plots used for reporting |
 
 ### Example
@@ -306,7 +308,7 @@ python src/plot_metrics.py
 
 ### 6. Analyze results
 
-Use the generated CSV files and plots to compare model robustness across perturbation settings.
+Use the generated CSV files and plots to compare model robustness across perturbation settings. See [`Insights.md`](Insights.md) for a summary of key findings.
 
 ---
 
@@ -325,19 +327,20 @@ This project provides a systematic stress-testing framework for temporal deep le
 
 - Run all commands from the repository root.
 - Seeds commonly used in experiments: `0`, `2`
-- Percentages are typically varied across multiple perturbation levels.
+- Percentages are typically varied across: `10, 20, 30, 40, 50, 60, 70, 80, 90`
 - The unbalanced perturbation does not use seeds.
 - File naming must match the `--file` argument exactly.
 - Some datasets require credentialed access before preprocessing and use.
+- GRU-D may fail on very sparse data — this is expected behaviour.
 
 ---
 
 ## Additional Guides
 
-See the `docs/` folder for complete instructions:
+See the [`docs/`](docs/) folder for complete instructions:
 
-- GPU / HPC usage
-- Hyperparameter settings
-- PKL generation pipeline
-- Model training and execution
-- Repository structure
+- [GPU / HPC usage](docs/gpu_hpc.md)
+- [Hyperparameter settings](docs/hyperparameters.md)
+- [PKL generation pipeline](docs/pkl_pipeline.md)
+- [Model training and execution](docs/training.md)
+- [Repository structure](docs/structure.md)
