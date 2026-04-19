@@ -238,17 +238,19 @@ results/mimic_iii/IHM/GRU/subsampled/mimic_iii_subsampled_20_0/
 
 The project reports the following evaluation metrics:
 
-| Metric | Description | What to look for |
+| Metric | Used for | Key finding from experiments |
 |---|---|---|
-| AUROC | Overall ranking performance | Values above 0.75 indicate good discrimination |
-| AUPRC | Ranking performance under class imbalance | More informative than AUROC when classes are imbalanced |
-| Accuracy | Threshold-based classification performance | Can be misleading under imbalance; use alongside F1 |
-| F1-score | Balance between precision and recall | Values above 0.6 indicate reasonable performance |
-| Recall | Sensitivity to positive cases | Critical for clinical tasks where missing positives is costly |
+| AUROC | Subsampling, Sparsification | Performance stays stable above ~2000 admissions (MIMIC-III: ~0.875–0.900 at 100%; PhysioNet: ~0.825–0.850 at 100%) and drops sharply below 10–20% of data |
+| AUPRC | Class imbalance (Unbalanced) | Primary metric for the unbalanced perturbation; drops sharply below 20% positive class, collapses below 10% |
+| AUPRC Gain | Class imbalance (Unbalanced) | AUPRC gain over a random baseline; peaks around 30–40% positive class, then declines — models lose meaningful advantage over random at very low positive rates |
+| F1-score | Class imbalance (Unbalanced) | Mirrors AUPRC behaviour under imbalance; reported alongside AUPRC in the NF cohort comparison |
 
 Higher values indicate better predictive performance across all metrics.
 
-> **Interpreting degradation**: As perturbation severity increases (e.g. reducing cohort size from 90% to 10%), expect AUROC and AUPRC to drop. A robust model degrades gradually; a fragile one shows a sharp drop at moderate perturbation levels.
+> **Interpreting degradation across perturbations:**
+> - **Subsampling**: Sharp AUROC drop below 10–20% of the cohort (~2000 admissions for PhysioNet, ~5000 for MIMIC-III). GRU-D and STraTS degrade most at very low sample sizes.
+> - **Sparsification**: Gradual, steady AUROC decline — the least impactful perturbation overall. GRU-D breaks down entirely as it requires at least two measurements to compute delta values.
+> - **Class imbalance**: AUPRC collapses below 20% positive class. Performance drops are consistent across all models with no single model standing out as more robust.
 
 ---
 
