@@ -28,23 +28,12 @@ outputs/
 plots_metrics_cv/
 plots_per_duration/
 plots_per_metric/
+artifacts/
 
 # Generated folders inside src
 src/logs/
 src/results/
 
-# If your repo contains a nested "strats-development" folder
-strats-development/data/
-strats-development/results/
-strats-development/results_cv/
-strats-development/outputs/
-strats-development/plots_metrics_cv/
-strats-development/plots_per_duration/
-strats-development/plots_per_metric/
-strats-development/src/logs/
-strats-development/src/results/
-aggregated/
-plots_per_metrics/
-
+# Old / duplicate folders
 aggregated/
 plots_per_metrics/
