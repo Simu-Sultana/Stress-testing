@@ -367,7 +367,7 @@ This project provides a systematic stress-testing framework for temporal deep le
 ## Notes
 
 - Run all commands from the repository root.
-- Seeds commonly used in experiments: `0`, `2`.
+- 10 random seeds
 - Percentages are typically varied across a range such as `10, 20, 30, 40, 50, 60, 70, 80, 90`.
 - The unbalanced perturbation does not use seeds.
 - File naming must match the `--file` argument exactly.
