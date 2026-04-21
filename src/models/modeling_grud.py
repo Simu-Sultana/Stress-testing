@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.jit as jit
 from typing import List, Optional
-from models import TimeSeriesModel
+from src.models.models import TimeSeriesModel
 
 
 

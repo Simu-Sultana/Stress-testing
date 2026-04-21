@@ -7,17 +7,20 @@ This guide provides a complete, step-by-step pipeline to reproduce all experimen
 ## 1. Environment Setup
 
 ### Create environment
+
 ```bash
 conda create -n strats python=3.10.9 -y
 conda activate strats
 ```
 
 ### Install dependencies
+
 ```bash
-pip install -r requirement.txt
+pip install -r requirements.txt
 ```
 
 ### Verify installation
+
 ```bash
 python -c "import torch, pandas, numpy; print('Environment OK')"
 ```
@@ -35,37 +38,42 @@ data/processed/
 ```
 
 ### Important
-- These are the base datasets  
-- All generated files will also be stored here  
+
+- These are the base datasets
+- All generated files will also be stored here
 
 ---
 
 ## 3. Generate Perturbed Data
 
 ### Settings
-- Percentages: 10–90  
-- Seeds: 0, 2  
+
+- Percentages: 10–90
+- Seeds: 0–9
 - Perturbations:
-  - subsampled  
-  - sparsified-tsid-varid  
-  - unbalanced  
+  - subsampled
+  - sparsified-tsid-varid
+  - unbalanced
+
+---
 
 ### Subsampled + Sparsified
+
 ```bash
 PCTS=(10 20 30 40 50 60 70 80 90)
-SEEDS=(0 2)
+SEEDS=(0 1 2 3 4 5 6 7 8 9)
 PERTS=(subsampled sparsified-tsid-varid)
 
 for p in "${PERTS[@]}"; do
   for s in "${SEEDS[@]}"; do
     for pct in "${PCTS[@]}"; do
-      python3 src/preprocess_mimic_iii_${p}.py \
+      python -m src.perturbation.preprocess_mimic_iii_${p} \
         --data_dir data/processed \
         --out_dir data/processed \
         --seed $s \
         --pct $pct
 
-      python3 src/preprocess_physionet_2012_${p}.py \
+      python -m src.perturbation.preprocess_physionet_2012_${p} \
         --data_dir data/processed \
         --out_dir data/processed \
         --seed $s \
@@ -75,15 +83,20 @@ for p in "${PERTS[@]}"; do
 done
 ```
 
+---
+
 ### Unbalanced (no seed)
+
 ```bash
+PCTS=(10 20 30 40 50 60 70 80 90)
+
 for pct in "${PCTS[@]}"; do
-  python3 src/preprocess_mimic_iii_unbalanced.py \
+  python -m src.perturbation.preprocess_mimic_iii_unbalanced \
     --data_dir data/processed \
     --out_dir data/processed \
     --pct $pct
 
-  python3 src/preprocess_physionet_2012_unbalanced.py \
+  python -m src.perturbation.preprocess_physionet_2012_unbalanced \
     --data_dir data/processed \
     --out_dir data/processed \
     --pct $pct
@@ -94,14 +107,17 @@ done
 
 ## 4. Training
 
+Run all experiments:
+
 ```bash
-bash run_all_models.sh
+bash src/pipeline/run_perturbations_training.sh
 ```
 
 ### This will
-- train all models  
-- run all perturbations  
-- save outputs in `results/`  
+
+- train all models
+- run all perturbations
+- save outputs in `results/`
 
 ---
 
@@ -112,16 +128,17 @@ results/<dataset>/<target>/<model>/<perturbation>/<run_name>/
 ```
 
 Each run contains:
-- CSV metrics  
-- logs  
-- checkpoint (`best.pt`)  
+
+- CSV metrics
+- logs
+- checkpoint (`best.pt`)
 
 ---
 
 ## 6. Plot Generation
 
 ```bash
-python3 src/plot_metrics.py
+python -m src.pipeline.plot_metrics
 ```
 
 Outputs will be stored in:
@@ -136,37 +153,41 @@ plots_per_metric/
 
 ```bash
 conda activate strats
-srun --exclusive -N1 -n1 --gres=gpu:1 bash -lc "bash run_perturbations_training.sh"
+srun --exclusive -N1 -n1 --gres=gpu:1 bash -lc "bash src/pipeline/run_perturbations_training.sh"
 ```
 
 ---
 
 ## 8. Reproducibility Notes
 
-- Seeds: 0, 2  
-- Percentages: 10–90  
-- Unbalanced has no seed  
-- Ensure correct file naming  
-- Ensure all `.pkl` files exist before training  
+- Seeds: 0–9
+- Percentages: 10–90
+- Unbalanced has no seed
+- Ensure correct file naming
+- Ensure all `.pkl` files exist before training
 
 ---
 
 ## 9. Common Issues
 
-- Missing files → run preprocessing  
-- Wrong naming → check format  
-- GRU-D fails → data too sparse  
+- Missing files → run preprocessing
+- Wrong naming → check file format
+- GRU-D fails → data too sparse (expected behavior)
 
 ---
 
 ## 10. Workflow Summary
 
-1. Setup environment  
-2. Add datasets  
-3. Generate perturbed data  
-4. Train models  
-5. Generate plots  
+1. Setup environment
+2. Add datasets
+3. Generate perturbed data
+4. Train models
+5. Generate plots
 
 ---
 
-This document ensures full reproducibility of all experiments.
+## 11. Analysis
+
+Use the generated CSV files and plots to compare model robustness across perturbation settings.
+
+See [`Insights.md`](Insights.md) for a summary of key findings.

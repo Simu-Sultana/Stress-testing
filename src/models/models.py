@@ -1,6 +1,6 @@
 import torch.nn as nn
 import argparse
-from utils import Logger
+from src.utils.utils import Logger
 import torch
 import torch.nn.functional as F
 

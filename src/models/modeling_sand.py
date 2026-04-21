@@ -4,7 +4,7 @@
 
 
 from argparse import Namespace
-from models import TimeSeriesModel
+from src.models.models import TimeSeriesModel
 import torch.nn as nn
 import torch.nn.functional as F
 import torch

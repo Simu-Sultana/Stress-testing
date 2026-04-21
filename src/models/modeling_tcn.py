@@ -1,4 +1,4 @@
-from models import TimeSeriesModel
+from src.models.models import TimeSeriesModel
 import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm

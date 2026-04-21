@@ -2,7 +2,7 @@ import pickle
 import numpy as np
 from tqdm import tqdm
 import torch
-from utils import CycleIndex
+from src.utils.utils import CycleIndex
 import os
 from pathlib import Path
 

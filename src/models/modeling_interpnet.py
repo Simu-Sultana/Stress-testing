@@ -1,7 +1,7 @@
 # References:
 # https://github.com/mlds-lab/interp-net/blob/master/src/multivariate_example.py#L23
 # https://openreview.net/pdf?id=r1efr3C9Ym
-from models import TimeSeriesModel
+from src.models.models import TimeSeriesModel
 import torch.nn as nn
 import torch
 import numpy as np

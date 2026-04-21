@@ -15,6 +15,8 @@ The framework supports multiple datasets and architectures, enabling controlled 
 
 This project benchmarks temporal deep learning models under controlled perturbation settings to analyze how robust they are when the training data become smaller, sparser, or more imbalanced.
 
+The codebase is organized as a modular Python package (`src/`) with dedicated submodules for training, models, perturbation, and evaluation.
+
 ### Supported datasets
 - MIMIC-III
 - PhysioNet 2012
@@ -33,6 +35,18 @@ This project benchmarks temporal deep learning models under controlled perturbat
 
 ---
 
+## Important
+
+All scripts must be run using module syntax:
+
+```bash
+python -m src.<module>
+```
+
+Running scripts using `python src/...` may break imports after restructuring.
+
+---
+
 ## Quick Start
 
 > Run all commands from the repository root.
@@ -47,7 +61,7 @@ pip install -r requirements.txt
 
 Place the processed base files in the following location:
 
-```
+```text
 data/processed/mimic_iii.pkl
 data/processed/physionet_2012.pkl
 ```
@@ -57,7 +71,11 @@ data/processed/physionet_2012.pkl
 Example:
 
 ```bash
-python src/preprocess_mimic_iii_subsampled.py --pct 20 --seed 0
+python -m src.perturbation.preprocess_mimic_iii_subsampled \
+  --data_dir data/processed \
+  --out_dir data/processed \
+  --pct 20 \
+  --seed 0
 ```
 
 ### 4. Train a model
@@ -65,29 +83,41 @@ python src/preprocess_mimic_iii_subsampled.py --pct 20 --seed 0
 Example:
 
 ```bash
-python src/main.py --dataset mimic_iii --model_type gru --file mimic_iii_subsampled_20_0
+python -m src.training.main \
+  --dataset mimic_iii \
+  --target ihm \
+  --model_type gru \
+  --file mimic_iii_subsampled_20_0
 ```
 
 ### 5. Generate plots
 
 ```bash
-python src/plot_metrics.py
+python -m src.pipeline.plot_metrics
 ```
 
 ---
 
 ## Repository Structure
 
-```
+```text
 .
-├── src/                    # core implementation: models, training, preprocessing
+├── src/
+│   ├── training/        # training logic (main, dataset, evaluator)
+│   ├── models/          # model architectures
+│   ├── perturbation/    # preprocessing / perturbation scripts
+│   ├── pipeline/        # plotting and analysis
+│   ├── utils/           # helper utilities
+│   └── debug/           # debugging tools
+│
 ├── data/
-│   └── processed/          # base and generated .pkl datasets
-├── results/                # run-wise experiment outputs
-├── All_results/            # aggregated results
-├── plots_per_metric/       # metric-wise plots
-├── final_plots/            # final selected plots for reporting
-├── docs/                   # detailed documentation
+│   └── processed/       # base and generated .pkl datasets
+│
+├── results/             # run-wise experiment outputs
+├── All_results/         # aggregated results
+├── plots_per_metric/    # metric-wise plots
+├── final_plots/         # final selected plots for reporting
+├── docs/                # detailed documentation
 ├── README.md
 ├── Reproduce_Guide.md
 ├── Insights.md
@@ -119,7 +149,7 @@ This project uses the following datasets:
 
 After obtaining and processing the datasets, place the base `.pkl` files in:
 
-```
+```text
 data/processed/
 ```
 
@@ -129,7 +159,7 @@ data/processed/
 
 ### Python version
 
-```
+```text
 Python 3.10.9
 ```
 
@@ -141,22 +171,17 @@ source venv/bin/activate
 pip install --upgrade pip
 ```
 
-### Install PyTorch with CUDA 11.7
-
-```bash
-pip install torch==2.0.0+cu117 torchvision==0.15.1+cu117 torchaudio==2.0.1+cu117 --index-url https://download.pytorch.org/whl/cu117
-```
-
-### Install the remaining dependencies
-
-```bash
-pip install numpy==1.26.4 pandas==2.0.3 scipy==1.10.1 pytz==2023.3.post1 tqdm==4.66.1 matplotlib==3.7.5 scikit-learn==1.2.2 transformers==4.35.2
-```
-
-Alternatively, install all required packages using:
+### Install dependencies
 
 ```bash
 pip install -r requirements.txt
+```
+
+### Optional: manual installation if PyTorch CUDA wheels fail on your system
+
+```bash
+pip install numpy==1.26.4 pandas==2.0.3 scipy==1.10.1 pytz==2023.3.post1 tqdm==4.66.1 matplotlib==3.7.5 scikit-learn==1.2.2 transformers==4.35.2
+pip install torch torchvision torchaudio
 ```
 
 ---
@@ -168,16 +193,16 @@ Perturbed `.pkl` files are generated from the base dataset files.
 ### Example: MIMIC-III subsampling
 
 ```bash
-python src/preprocess_mimic_iii_subsampled.py \
-    --data_dir data/processed \
-    --out_dir data/processed \
-    --seed 2 \
-    --pct 20
+python -m src.perturbation.preprocess_mimic_iii_subsampled \
+  --data_dir data/processed \
+  --out_dir data/processed \
+  --seed 2 \
+  --pct 20
 ```
 
 Generated files follow the project naming convention, for example:
 
-```
+```text
 mimic_iii_subsampled_20_0.pkl
 physionet_2012_subsampled_20_0.pkl
 ```
@@ -188,12 +213,16 @@ For more preprocessing details, see: [PKL generation pipeline](docs/pkl_pipeline
 
 ## Training
 
-Train a model using `src/main.py`.
+Train a model using `src.training.main`.
 
 ### Example
 
 ```bash
-python src/main.py --dataset mimic_iii --model_type gru --file mimic_iii_subsampled_20_0
+python -m src.training.main \
+  --dataset mimic_iii \
+  --target ihm \
+  --model_type gru \
+  --file mimic_iii_subsampled_20_0
 ```
 
 ### Important arguments
@@ -201,6 +230,7 @@ python src/main.py --dataset mimic_iii --model_type gru --file mimic_iii_subsamp
 | Argument | Description | Example |
 |---|---|---|
 | `--dataset` | Dataset name | `mimic_iii`, `physionet_2012` |
+| `--target` | Prediction target | `ihm`, `los` |
 | `--model_type` | Model type | `gru`, `grud`, `tcn`, `sand`, `strats` |
 | `--file` | Dataset file tag | `mimic_iii_subsampled_20_0` |
 | `--output_dir` | Optional custom output directory | `results/my_run` |
@@ -213,14 +243,14 @@ For more training details, see: [Model training and execution](docs/training.md)
 
 Each experiment stores outputs in a structured directory format:
 
-```
+```text
 results/<dataset>/<target>/<model>/<perturbation>/<run_name>/
 ```
 
 ### Example
 
-```
-results/mimic_iii/IHM/GRU/subsampled/mimic_iii_subsampled_20_0/
+```text
+results/mimic_iii/ihm/gru/subsampled/mimic_iii_subsampled_20_0/
 ```
 
 ### Typical contents
@@ -228,7 +258,7 @@ results/mimic_iii/IHM/GRU/subsampled/mimic_iii_subsampled_20_0/
 | File | Description |
 |---|---|
 | `log.txt` | Training progress per epoch |
-| `best.pt` | Best model checkpoint (highest validation AUROC) |
+| `best.pt` | Best model checkpoint |
 | `last.pt` | Final model checkpoint after all epochs |
 | `<run_name>.csv` | Evaluation metrics for that run |
 
@@ -240,17 +270,18 @@ The project reports the following evaluation metrics:
 
 | Metric | Used for | Key finding from experiments |
 |---|---|---|
-| AUROC | Subsampling, Sparsification | Performance stays stable above ~2000 admissions (MIMIC-III: ~0.875–0.900 at 100%; PhysioNet: ~0.825–0.850 at 100%) and drops sharply below 10–20% of data |
-| AUPRC | Class imbalance (Unbalanced) | Primary metric for the unbalanced perturbation; drops sharply below 20% positive class, collapses below 10% |
-| AUPRC Gain | Class imbalance (Unbalanced) | AUPRC gain over a random baseline; peaks around 30–40% positive class, then declines — models lose meaningful advantage over random at very low positive rates |
-| F1-score | Class imbalance (Unbalanced) | Mirrors AUPRC behaviour under imbalance; reported alongside AUPRC in the NF cohort comparison |
+| AUROC | Subsampling, Sparsification | Performance stays stable above moderate cohort sizes and drops sharply below 10–20% of the data |
+| AUPRC | Class imbalance (Unbalanced) | Primary metric for the unbalanced perturbation; drops sharply below 20% positive class |
+| AUPRC Gain | Class imbalance (Unbalanced) | Measures improvement over a random baseline and declines strongly at very low positive rates |
+| F1-score | Class imbalance (Unbalanced) | Mirrors AUPRC behavior under imbalance |
 
 Higher values indicate better predictive performance across all metrics.
 
-> **Interpreting degradation across perturbations:**
-> - **Subsampling**: Sharp AUROC drop below 10–20% of the cohort (~2000 admissions for PhysioNet, ~5000 for MIMIC-III). GRU-D and STraTS degrade most at very low sample sizes.
-> - **Sparsification**: Gradual, steady AUROC decline — the least impactful perturbation overall. GRU-D breaks down entirely as it requires at least two measurements to compute delta values.
-> - **Class imbalance**: AUPRC collapses below 20% positive class. Performance drops are consistent across all models with no single model standing out as more robust.
+> **Interpreting degradation across perturbations**
+> - **Subsampling**: Performance drops sharply below 10–20% of the cohort.
+> - **Sparsification**: Performance declines more gradually than subsampling.
+> - **Class imbalance**: AUPRC collapses below 20% positive class.
+> - **GRU-D** may fail under extreme sparsity because it requires sufficient observations to compute delta values.
 
 ---
 
@@ -262,13 +293,13 @@ Plotting scripts generate summary figures from aggregated experiment results.
 
 | Folder | Description |
 |---|---|
-| `plots_per_metric/` | Metric-wise comparison plots across all perturbation levels |
+| `plots_per_metric/` | Metric-wise comparison plots across perturbation levels |
 | `final_plots/` | Final selected plots used for reporting |
 
 ### Example
 
 ```bash
-python src/plot_metrics.py
+python -m src.pipeline.plot_metrics
 ```
 
 ---
@@ -277,7 +308,7 @@ python src/plot_metrics.py
 
 ### 1. Add the base `.pkl` files
 
-```
+```text
 data/processed/mimic_iii.pkl
 data/processed/physionet_2012.pkl
 ```
@@ -285,27 +316,35 @@ data/processed/physionet_2012.pkl
 ### 2. Generate perturbed datasets
 
 ```bash
-python src/preprocess_mimic_iii_subsampled.py --pct 20 --seed 0
+python -m src.perturbation.preprocess_mimic_iii_subsampled \
+  --data_dir data/processed \
+  --out_dir data/processed \
+  --pct 20 \
+  --seed 0
 ```
 
 ### 3. Train models
 
 ```bash
-python src/main.py --dataset mimic_iii --model_type gru --file mimic_iii_subsampled_20_0
+python -m src.training.main \
+  --dataset mimic_iii \
+  --target ihm \
+  --model_type gru \
+  --file mimic_iii_subsampled_20_0
 ```
 
 ### 4. Save results
 
 Outputs are stored in:
 
-```
+```text
 results/<dataset>/<target>/<model>/<perturbation>/<run_name>/
 ```
 
 ### 5. Generate plots
 
 ```bash
-python src/plot_metrics.py
+python -m src.pipeline.plot_metrics
 ```
 
 ### 6. Analyze results
@@ -328,12 +367,12 @@ This project provides a systematic stress-testing framework for temporal deep le
 ## Notes
 
 - Run all commands from the repository root.
-- Seeds commonly used in experiments: `0`, `2`
-- Percentages are typically varied across: `10, 20, 30, 40, 50, 60, 70, 80, 90`
+- Seeds commonly used in experiments: `0`, `2`.
+- Percentages are typically varied across a range such as `10, 20, 30, 40, 50, 60, 70, 80, 90`.
 - The unbalanced perturbation does not use seeds.
 - File naming must match the `--file` argument exactly.
 - Some datasets require credentialed access before preprocessing and use.
-- GRU-D may fail on very sparse data — this is expected behaviour.
+- GRU-D may fail on very sparse data — this is expected behavior.
 
 ---
 

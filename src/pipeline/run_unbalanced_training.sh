@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 # --- ensure conda works even in non-interactive shells (slurm/wrap) ---
 if ! command -v conda >/dev/null 2>&1; then

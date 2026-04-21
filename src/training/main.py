@@ -1,3 +1,6 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import argparse
 import os
 import csv
@@ -10,21 +13,21 @@ import numpy as np
 import pandas as pd
 import torch
 from tqdm import tqdm
-from transformers.optimization import AdamW
+from torch.optim import AdamW
 
-from utils import Logger, set_all_seeds
-from dataset_pretrain import PretrainDataset
-from dataset import Dataset
-from modeling_strats import Strats
-from modeling_gru import GRU_TS
-from modeling_tcn import TCN_TS
-from modeling_sand import SAND
-from modeling_grud import GRUD_TS
-from modeling_interpnet import InterpNet
+from src.utils.utils import Logger, set_all_seeds
+from src.training.dataset_pretrain import PretrainDataset
+from src.training.dataset import Dataset
+from src.models.modeling_strats import Strats
+from src.models.modeling_gru import GRU_TS
+from src.models.modeling_tcn import TCN_TS
+from src.models.modeling_sand import SAND
+from src.models.modeling_grud import GRUD_TS
+from src.models.modeling_interpnet import InterpNet
 
-from models import count_parameters
-from evaluator import Evaluator
-from evaluator_pretrain import PretrainEvaluator
+from src.models.models import count_parameters
+from src.training.evaluator import Evaluator
+from src.training.evaluator_pretrain import PretrainEvaluator
 
 def get_repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
